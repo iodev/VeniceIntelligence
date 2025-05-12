@@ -19,6 +19,8 @@ class VeniceClient:
             api_key: Venice API key
             base_url: Base URL for Venice API (native endpoint)
         """
+        # Import json at the module level
+        import json
         self.api_key = api_key
         self.base_url = base_url
         
@@ -67,7 +69,7 @@ class VeniceClient:
     def generate(
         self, 
         messages: list, 
-        model: str = "venice-large-beta",
+        model: str = "mistral-31-24b",
         max_tokens: int = 500,
         temperature: float = 0.7,
         top_p: float = 0.9,
@@ -163,7 +165,7 @@ class VeniceClient:
     def get_embedding(
         self, 
         text: str, 
-        model: str = "venice-embedding"
+        model: str = "llama-3.2-3b"
     ) -> List[float]:
         """
         Get embedding vector for text via native Venice API
