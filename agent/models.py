@@ -215,7 +215,7 @@ class VeniceClient:
         except Exception as e:
             logger.error(f"Error generating embedding with OpenAI: {str(e)}")
             # Return zeros as fallback
-            return [0.0] * 1536  # Default embedding size
+            return [0.0] * 3072  # text-embedding-3-large size
     
     def get_available_models(self) -> List[Dict[str, Any]]:
         """

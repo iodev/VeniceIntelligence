@@ -53,12 +53,30 @@ class MemoryManager:
         if QDRANT_AVAILABLE and qdrant_url:
             try:
                 self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
-                # Check if collection exists, create if not
+                # Check if collection exists with the correct vector size, recreate if necessary
                 collections = self.client.get_collections().collections
                 collection_names = [c.name for c in collections]
+                create_new_collection = False
                 
                 if collection_name not in collection_names:
-                    logger.info(f"Creating collection {collection_name}")
+                    logger.info(f"Collection {collection_name} not found, will create it")
+                    create_new_collection = True
+                else:
+                    # Check if vector size matches
+                    try:
+                        collection_info = self.client.get_collection(collection_name=collection_name)
+                        current_vector_size = collection_info.config.params.vectors.size
+                        if current_vector_size != vector_size:
+                            logger.warning(f"Collection {collection_name} has vector size {current_vector_size} but {vector_size} is required")
+                            logger.info(f"Recreating collection {collection_name} with correct vector size")
+                            self.client.delete_collection(collection_name=collection_name)
+                            create_new_collection = True
+                    except Exception as e:
+                        logger.error(f"Error checking collection vector size: {e}")
+                        create_new_collection = True
+                
+                if create_new_collection:
+                    logger.info(f"Creating collection {collection_name} with vector size {vector_size}")
                     self.client.create_collection(
                         collection_name=collection_name,
                         vectors_config=qdrant_models.VectorParams(
