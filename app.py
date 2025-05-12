@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 
 # Initialize the agent components
 try:
-    venice_client = VeniceClient(api_key=config.VENICE_API_KEY)
+    venice_client = VeniceClient(
+        api_key=config.VENICE_API_KEY,
+        embeddings_api_key=config.VENICE_EMBEDDINGS_API_KEY
+    )
     memory_manager = MemoryManager(
         qdrant_url=config.QDRANT_URL,
         qdrant_api_key=config.QDRANT_API_KEY,

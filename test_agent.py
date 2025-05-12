@@ -30,6 +30,7 @@ def create_test_venice_client():
     logger.info("Creating test Venice client...")
     
     venice_api_key = os.environ.get("VENICE_API_KEY")
+    venice_embeddings_api_key = os.environ.get("VENICE_EMBEDDINGS_API_KEY")
     if not venice_api_key:
         logger.error("VENICE_API_KEY environment variable not set")
         return None
@@ -38,7 +39,10 @@ def create_test_venice_client():
     base_url = "https://api.venice.ai/api/v1"
     
     try:
-        client = VeniceClient(api_key=venice_api_key, base_url=base_url)
+        client = VeniceClient(
+            api_key=venice_api_key, 
+            embeddings_api_key=venice_embeddings_api_key,
+            base_url=base_url)
         
         # Test the connection
         if client.test_connection():
