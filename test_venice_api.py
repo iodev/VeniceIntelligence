@@ -113,7 +113,7 @@ def test_chat_completion(model: str = "mistral-31-24b"):
         logger.error(f"❌ Error generating response: {str(e)}")
         return False
 
-def test_embeddings(model: str = "llama-3.2-3b"):
+def test_embeddings(model: str = "text-embedding-bge-m3"):
     """Test embeddings endpoint"""
     logger.info(f"Testing embeddings with model: {model}...")
     

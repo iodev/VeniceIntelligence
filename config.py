@@ -24,6 +24,6 @@ AVAILABLE_MODELS = [
     "llama-3.2-3b",
     "llama-3.3-70b"
 ]
-EMBEDDING_MODEL = "llama-3.2-3b"
+EMBEDDING_MODEL = "text-embedding-bge-m3"
 MODEL_EVALUATION_INTERVAL = 10  # Number of interactions before re-evaluating models
 MEMORY_RETENTION_LIMIT = 1000   # Maximum number of memories to retain

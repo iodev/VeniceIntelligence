@@ -183,7 +183,8 @@ class VeniceClient:
         # Native Venice API format for embeddings
         payload = {
             "model": model,
-            "input": text
+            "input": text,
+            "encoding_format": "float"  # As per Venice.ai docs
         }
         
         try:
