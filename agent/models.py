@@ -11,7 +11,7 @@ class VeniceClient:
     Client for interacting with the Venice.ai API
     """
     
-    def __init__(self, api_key: str, base_url: str = "https://api.venice.ai/v1"):
+    def __init__(self, api_key: str, base_url: str = "https://api.venice.ai/api/v1"):
         """
         Initialize the Venice API client
         
@@ -67,7 +67,7 @@ class VeniceClient:
         stop: Optional[List[str]] = None
     ) -> str:
         """
-        Generate text using native Venice LLM API
+        Generate text using Venice.ai Chat API
         
         Args:
             prompt: The prompt to generate from
@@ -83,11 +83,19 @@ class VeniceClient:
         if not prompt:
             raise ValueError("Prompt cannot be empty")
         
-        # Native Venice API format for completions
+        # Format messages for Venice.ai Chat API
+        messages = [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+        
+        # Venice.ai Chat API payload
         payload = {
             "model": model,
-            "prompt": prompt,
-            "max_tokens": max_tokens,
+            "messages": messages,
+            "max_completion_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p
         }
@@ -96,9 +104,9 @@ class VeniceClient:
             payload["stop"] = stop
         
         try:
-            # Use completions endpoint for native Venice API
+            # Use chat endpoint for Venice.ai API
             response = self.session.post(
-                f"{self.base_url}/completions",
+                f"{self.base_url}/chat/completions",
                 json=payload,
                 timeout=60  # Longer timeout for generation
             )
@@ -110,8 +118,8 @@ class VeniceClient:
             
             result = response.json()
             
-            # Extract the generated text from the Venice API response format
-            generated_text = result.get("choices", [{}])[0].get("text", "")
+            # Extract the generated text from the Venice.ai Chat API response
+            generated_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             
             if not generated_text:
                 logger.warning("Empty response from Venice API")
