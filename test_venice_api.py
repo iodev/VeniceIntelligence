@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Test constants
 VENICE_API_KEY = os.environ.get("VENICE_API_KEY")
+VENICE_EMBEDDINGS_API_KEY = os.environ.get("VENICE_EMBEDDINGS_API_KEY")
 VENICE_BASE_URL = "https://api.venice.ai/api/v1"
 
 def test_api_connection():
@@ -131,7 +132,8 @@ def test_embeddings(model: str = "text-embedding-bge-m3"):
     
     payload = {
         "model": model,
-        "input": text
+        "input": text,
+        "encoding_format": "float"
     }
     
     try:
