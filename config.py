@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 # Venice.ai API Configuration
 VENICE_API_KEY = os.getenv("VENICE_API_KEY", "")
-VENICE_API_BASE_URL = "https://api.venice.ai/v1"
+# Modified to match OpenAI-compatible endpoint structure
+VENICE_API_BASE_URL = "https://api.venice.ai/v1/openai"
 
 # Qdrant Configuration
 QDRANT_URL = os.getenv("QDRANT_URL", "")
