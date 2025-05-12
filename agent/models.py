@@ -44,14 +44,21 @@ class VeniceClient:
             Whether the connection was successful
         """
         try:
-            # Try to get available models as a test using OpenAI-compatible endpoint
+            # Print the base URL and headers for debugging
+            logger.info(f"Testing connection to Venice API at: {self.base_url}")
+            logger.info(f"Request headers: {self.session.headers}")
+            
+            # Try to get available models as a test
             response = self.session.get(f"{self.base_url}/models")
+            
+            logger.info(f"Venice API response status: {response.status_code}")
             
             if response.status_code == 200:
                 logger.info("Successfully connected to Venice API")
                 return True
             else:
                 logger.error(f"Failed to connect to Venice API: {response.status_code} {response.text}")
+                logger.error(f"Full URL: {self.base_url}/models")
                 return False
         except Exception as e:
             logger.error(f"Error connecting to Venice API: {str(e)}")
@@ -59,7 +66,7 @@ class VeniceClient:
     
     def generate(
         self, 
-        prompt: str, 
+        messages: list, 
         model: str = "venice-large-beta",
         max_tokens: int = 500,
         temperature: float = 0.7,
@@ -70,7 +77,7 @@ class VeniceClient:
         Generate text using Venice.ai Chat API
         
         Args:
-            prompt: The prompt to generate from
+            messages: List of message objects (system, user, etc.)
             model: Model ID to use
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature (0-1)
@@ -80,17 +87,12 @@ class VeniceClient:
         Returns:
             Generated text
         """
-        if not prompt:
-            raise ValueError("Prompt cannot be empty")
-        
-        # Format messages for Venice.ai Chat API
-        messages = [
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-        
+        if not messages:
+            raise ValueError("Messages cannot be empty")
+            
+        logger.info(f"Generating with model: {model}")
+        logger.debug(f"Messages: {messages}")
+            
         # Venice.ai Chat API payload
         payload = {
             "model": model,
@@ -105,6 +107,7 @@ class VeniceClient:
         
         try:
             # Use chat endpoint for Venice.ai API
+            logger.info(f"Calling Venice API at: {self.base_url}/chat/completions")
             response = self.session.post(
                 f"{self.base_url}/chat/completions",
                 json=payload,
@@ -117,6 +120,7 @@ class VeniceClient:
                 raise Exception(error_msg)
             
             result = response.json()
+            logger.debug(f"Response JSON: {result}")
             
             # Extract the generated text from the Venice.ai Chat API response
             generated_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")

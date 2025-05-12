@@ -118,9 +118,9 @@ class Agent:
         
         return response, model_to_use
     
-    def _construct_prompt(self, query: str, system_prompt: str, context: str) -> str:
+    def _construct_prompt(self, query: str, system_prompt: str, context: str) -> list:
         """
-        Construct the prompt for the Venice.ai API
+        Construct the messages for the Venice.ai Chat API
         
         Args:
             query: The user's query
@@ -128,15 +128,28 @@ class Agent:
             context: Context from memory
             
         Returns:
-            Formatted prompt string
+            List of message objects for the Venice.ai Chat API
         """
-        prompt = f"{system_prompt}\n\n"
+        messages = []
         
+        # System message
+        system_content = system_prompt
         if context:
-            prompt += f"Context from previous interactions:\n{context}\n\n"
+            system_content += f"\n\nContext from previous interactions:\n{context}"
         
-        prompt += f"User: {query}\nAssistant:"
-        return prompt
+        messages.append({
+            "role": "system",
+            "content": system_content
+        })
+        
+        # User message
+        messages.append({
+            "role": "user",
+            "content": query
+        })
+        
+        logger.debug(f"Constructed messages: {messages}")
+        return messages
     
     def _create_context_from_memories(self, memories: List[Dict[str, Any]]) -> str:
         """
