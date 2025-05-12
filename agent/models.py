@@ -11,13 +11,13 @@ class VeniceClient:
     Client for interacting with the Venice.ai API
     """
     
-    def __init__(self, api_key: str, base_url: str = "https://api.venice.ai/v1/openai"):
+    def __init__(self, api_key: str, base_url: str = "https://api.venice.ai/v1"):
         """
         Initialize the Venice API client
         
         Args:
             api_key: Venice API key
-            base_url: Base URL for Venice API (OpenAI-compatible endpoint)
+            base_url: Base URL for Venice API (native endpoint)
         """
         self.api_key = api_key
         self.base_url = base_url
@@ -67,7 +67,7 @@ class VeniceClient:
         stop: Optional[List[str]] = None
     ) -> str:
         """
-        Generate text using Venice LLM via OpenAI-compatible API
+        Generate text using native Venice LLM API
         
         Args:
             prompt: The prompt to generate from
@@ -83,10 +83,10 @@ class VeniceClient:
         if not prompt:
             raise ValueError("Prompt cannot be empty")
         
-        # OpenAI-compatible format for chat completions
+        # Native Venice API format for completions
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "prompt": prompt,
             "max_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p
@@ -96,9 +96,9 @@ class VeniceClient:
             payload["stop"] = stop
         
         try:
-            # Use chat completions endpoint for OpenAI compatibility
+            # Use completions endpoint for native Venice API
             response = self.session.post(
-                f"{self.base_url}/chat/completions",
+                f"{self.base_url}/completions",
                 json=payload,
                 timeout=60  # Longer timeout for generation
             )
@@ -110,8 +110,8 @@ class VeniceClient:
             
             result = response.json()
             
-            # Extract the generated text from the OpenAI-compatible response format
-            generated_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            # Extract the generated text from the Venice API response format
+            generated_text = result.get("choices", [{}])[0].get("text", "")
             
             if not generated_text:
                 logger.warning("Empty response from Venice API")
@@ -122,11 +122,15 @@ class VeniceClient:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to communicate with Venice API: {str(e)}")
         except json.JSONDecodeError as e:
-            if 'response' in locals():
-                logger.error(f"Invalid JSON response: {response.text}")
-            else:
-                logger.error(f"JSON decode error: {e}")
-            raise Exception("Invalid response format from Venice API")
+            error_text = ""
+            try:
+                if 'response' in locals():
+                    error_text = response.text
+                    logger.error(f"Invalid JSON response: {error_text}")
+            except:
+                pass
+            logger.error(f"JSON decode error: {e}")
+            raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             raise
@@ -137,7 +141,7 @@ class VeniceClient:
         model: str = "venice-embedding"
     ) -> List[float]:
         """
-        Get embedding vector for text via OpenAI-compatible API
+        Get embedding vector for text via native Venice API
         
         Args:
             text: Text to get embedding for
@@ -149,7 +153,7 @@ class VeniceClient:
         if not text:
             raise ValueError("Text cannot be empty")
         
-        # OpenAI-compatible format
+        # Native Venice API format for embeddings
         payload = {
             "model": model,
             "input": text
@@ -168,7 +172,7 @@ class VeniceClient:
             
             result = response.json()
             
-            # Extract the embedding from the OpenAI-compatible response
+            # Extract the embedding from the Venice API response
             embedding = result.get("data", [{}])[0].get("embedding", [])
             
             if not embedding:
@@ -182,18 +186,22 @@ class VeniceClient:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to get embedding: {str(e)}")
         except json.JSONDecodeError as e:
-            if 'response' in locals():
-                logger.error(f"Invalid JSON response: {response.text}")
-            else:
-                logger.error(f"JSON decode error: {e}")
-            raise Exception("Invalid response format from Venice API")
+            error_text = ""
+            try:
+                if 'response' in locals():
+                    error_text = response.text
+                    logger.error(f"Invalid JSON response: {error_text}")
+            except:
+                pass
+            logger.error(f"JSON decode error: {e}")
+            raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             raise
     
     def get_available_models(self) -> List[Dict[str, Any]]:
         """
-        Get list of available models via OpenAI-compatible API
+        Get list of available models via native Venice API
         
         Returns:
             List of model information
@@ -208,7 +216,7 @@ class VeniceClient:
             
             result = response.json()
             
-            # Extract models list from OpenAI-compatible response
+            # Extract models list from Venice API response
             models = result.get("data", [])
             
             return models
@@ -217,11 +225,15 @@ class VeniceClient:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to get models: {str(e)}")
         except json.JSONDecodeError as e:
-            if 'response' in locals():
-                logger.error(f"Invalid JSON response: {response.text}")
-            else:
-                logger.error(f"JSON decode error: {e}")
-            raise Exception("Invalid response format from Venice API")
+            error_text = ""
+            try:
+                if 'response' in locals():
+                    error_text = response.text
+                    logger.error(f"Invalid JSON response: {error_text}")
+            except:
+                pass
+            logger.error(f"JSON decode error: {e}")
+            raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
             raise
