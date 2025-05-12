@@ -18,7 +18,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "agent_memory")
-QDRANT_VECTOR_SIZE = 1536  # Default for OpenAI embeddings
+QDRANT_VECTOR_SIZE = 3072  # Size for OpenAI text-embedding-3-large model
 
 # Agent Configuration
 DEFAULT_MODEL = "mistral-31-24b"

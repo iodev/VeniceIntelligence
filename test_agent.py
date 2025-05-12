@@ -72,7 +72,7 @@ def create_test_memory_manager(venice_client):
             qdrant_url=qdrant_url,
             qdrant_api_key=qdrant_api_key,
             collection_name="test_agent_memory",
-            vector_size=1536,  # Default size for most embedding models
+            vector_size=3072,  # Size for OpenAI text-embedding-3-large model
             embedding_model="text-embedding-3-large",
             venice_client=venice_client
         )

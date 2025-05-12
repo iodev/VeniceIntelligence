@@ -190,7 +190,7 @@ class VeniceClient:
         if not self.openai_client:
             logger.error("OpenAI client not initialized, cannot generate embeddings")
             # Return zeros as fallback (not ideal, but prevents crashing)
-            return [0.0] * 1536  # Default embedding size
+            return [0.0] * 3072  # text-embedding-3-large size
         
         try:
             # the newest OpenAI model is "text-embedding-3-large" which was released in 2024
@@ -207,7 +207,7 @@ class VeniceClient:
             if not embedding:
                 logger.warning("Empty embedding from OpenAI API")
                 # Return zeros as fallback
-                return [0.0] * 1536  # Default embedding size
+                return [0.0] * 3072  # text-embedding-3-large size
             
             logger.info(f"Successfully generated embedding with OpenAI model {model}, dimension: {len(embedding)}")
             return embedding
