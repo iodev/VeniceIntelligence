@@ -11,29 +11,46 @@ class VeniceClient:
     Client for interacting with the Venice.ai API
     """
     
-    def __init__(self, api_key: str, base_url: str = "https://api.venice.ai/api/v1"):
+    def __init__(
+        self, 
+        api_key: str, 
+        embeddings_api_key: Optional[str] = None,
+        base_url: str = "https://api.venice.ai/api/v1"
+    ):
         """
         Initialize the Venice API client
         
         Args:
-            api_key: Venice API key
+            api_key: Venice API key for chat/completion endpoints
+            embeddings_api_key: Optional separate API key for embeddings endpoint
             base_url: Base URL for Venice API (native endpoint)
         """
         # Import json at the module level
         import json
         self.api_key = api_key
+        self.embeddings_api_key = embeddings_api_key or api_key  # Fall back to main API key if not provided
         self.base_url = base_url
         
         # Basic validation
         if not api_key:
             logger.warning("No Venice API key provided")
         
-        # Set up session
+        # Set up main session for chat completions
         self.session = requests.Session()
         self.session.headers.update({
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         })
+        
+        # Set up embeddings session if using a different key
+        if embeddings_api_key and embeddings_api_key != api_key:
+            self.embeddings_session = requests.Session()
+            self.embeddings_session.headers.update({
+                "Authorization": f"Bearer {embeddings_api_key}",
+                "Content-Type": "application/json"
+            })
+        else:
+            self.embeddings_session = self.session
         
         # Test connection
         self.test_connection()
@@ -191,7 +208,8 @@ class VeniceClient:
             # Store response variable at a higher scope
             response = None
             try:
-                response = self.session.post(
+                # Use the embeddings-specific session with the correct API key
+                response = self.embeddings_session.post(
                     f"{self.base_url}/embeddings",
                     json=payload
                 )
