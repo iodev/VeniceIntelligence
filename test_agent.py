@@ -30,7 +30,7 @@ def create_test_venice_client():
     logger.info("Creating test Venice client...")
     
     venice_api_key = os.environ.get("VENICE_API_KEY")
-    venice_embeddings_api_key = os.environ.get("VENICE_EMBEDDINGS_API_KEY")
+    openai_api_key = os.environ.get("OPENAI_API_KEY")
     if not venice_api_key:
         logger.error("VENICE_API_KEY environment variable not set")
         return None
@@ -41,7 +41,7 @@ def create_test_venice_client():
     try:
         client = VeniceClient(
             api_key=venice_api_key, 
-            embeddings_api_key=venice_embeddings_api_key,
+            openai_api_key=openai_api_key,
             base_url=base_url)
         
         # Test the connection
@@ -73,7 +73,7 @@ def create_test_memory_manager(venice_client):
             qdrant_api_key=qdrant_api_key,
             collection_name="test_agent_memory",
             vector_size=1536,  # Default size for most embedding models
-            embedding_model="venice-embedding",
+            embedding_model="text-embedding-3-large",
             venice_client=venice_client
         )
         

@@ -118,12 +118,16 @@ def test_embeddings(model: str = "text-embedding-bge-m3"):
     """Test embeddings endpoint"""
     logger.info(f"Testing embeddings with model: {model}...")
     
-    if not VENICE_EMBEDDINGS_API_KEY:
-        logger.error("VENICE_EMBEDDINGS_API_KEY environment variable not set")
+    # Let's try using the main API key instead of a separate embeddings key
+    # Venice.ai might use the same key for all endpoints
+    logger.info("Using main API key for embeddings test...")
+    
+    if not VENICE_API_KEY:
+        logger.error("VENICE_API_KEY environment variable not set")
         return False
     
     headers = {
-        "Authorization": f"Bearer {VENICE_EMBEDDINGS_API_KEY}",
+        "Authorization": f"Bearer {VENICE_API_KEY}",
         "Content-Type": "application/json"
     }
     

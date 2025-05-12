@@ -86,7 +86,7 @@ class MemoryManager:
     
     def _get_embedding(self, text: str) -> List[float]:
         """
-        Get embedding for a text using Venice embedding model
+        Get embedding for a text using OpenAI embedding model
         
         Args:
             text: Text to embed

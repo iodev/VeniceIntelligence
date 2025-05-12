@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 try:
     venice_client = VeniceClient(
         api_key=config.VENICE_API_KEY,
-        embeddings_api_key=config.VENICE_EMBEDDINGS_API_KEY
+        openai_api_key=config.OPENAI_API_KEY
     )
     memory_manager = MemoryManager(
         qdrant_url=config.QDRANT_URL,

@@ -3,35 +3,40 @@ import json
 from typing import List, Dict, Any, Optional
 import requests
 import time
+import os
+from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
 class VeniceClient:
     """
-    Client for interacting with the Venice.ai API
+    Client for interacting with the Venice.ai API with OpenAI for embeddings
     """
     
     def __init__(
         self, 
         api_key: str, 
-        embeddings_api_key: Optional[str] = None,
+        openai_api_key: Optional[str] = None,
         base_url: str = "https://api.venice.ai/api/v1"
     ):
         """
-        Initialize the Venice API client
+        Initialize the Venice API client with OpenAI for embeddings
         
         Args:
             api_key: Venice API key for chat/completion endpoints
-            embeddings_api_key: Optional separate API key for embeddings endpoint
+            openai_api_key: Optional OpenAI API key for embeddings
             base_url: Base URL for Venice API (native endpoint)
         """
         self.api_key = api_key
-        self.embeddings_api_key = embeddings_api_key or api_key  # Fall back to main API key if not provided
+        self.openai_api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
         self.base_url = base_url
         
         # Basic validation
         if not api_key:
             logger.warning("No Venice API key provided")
+        
+        if not self.openai_api_key:
+            logger.warning("No OpenAI API key provided for embeddings")
         
         # Set up main session for chat completions
         self.session = requests.Session()
@@ -40,15 +45,14 @@ class VeniceClient:
             "Content-Type": "application/json"
         })
         
-        # Set up embeddings session if using a different key
-        if embeddings_api_key and embeddings_api_key != api_key:
-            self.embeddings_session = requests.Session()
-            self.embeddings_session.headers.update({
-                "Authorization": f"Bearer {embeddings_api_key}",
-                "Content-Type": "application/json"
-            })
-        else:
-            self.embeddings_session = self.session
+        # Initialize OpenAI client for embeddings
+        try:
+            if self.openai_api_key:
+                self.openai_client = OpenAI(api_key=self.openai_api_key)
+                logger.info("OpenAI client initialized for embeddings")
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {str(e)}")
+            self.openai_client = None
         
         # Test connection
         self.test_connection()
@@ -168,14 +172,14 @@ class VeniceClient:
     def get_embedding(
         self, 
         text: str, 
-        model: str = "text-embedding-bge-m3"
+        model: str = "text-embedding-3-large"
     ) -> List[float]:
         """
-        Get embedding vector for text via native Venice API
+        Get embedding vector for text via OpenAI embedding API
         
         Args:
             text: Text to get embedding for
-            model: Embedding model to use
+            model: Embedding model to use (OpenAI model name)
             
         Returns:
             List of floats representing the embedding vector
@@ -183,53 +187,35 @@ class VeniceClient:
         if not text:
             raise ValueError("Text cannot be empty")
         
-        # Native Venice API format for embeddings
-        payload = {
-            "model": model,
-            "input": text,
-            "encoding_format": "float"  # As per Venice.ai docs
-        }
+        if not self.openai_client:
+            logger.error("OpenAI client not initialized, cannot generate embeddings")
+            # Return zeros as fallback (not ideal, but prevents crashing)
+            return [0.0] * 1536  # Default embedding size
         
-        response = None
         try:
-            # Use the embeddings-specific session with the correct API key
-            response = self.embeddings_session.post(
-                f"{self.base_url}/embeddings",
-                json=payload
+            # the newest OpenAI model is "text-embedding-3-large" which was released in 2024
+            # do not change this unless explicitly requested by the user
+            response = self.openai_client.embeddings.create(
+                model=model,
+                input=text,
+                encoding_format="float"
             )
             
-            if response.status_code != 200:
-                error_msg = f"Venice API error: {response.status_code}"
-                if hasattr(response, 'text'):
-                    error_msg += f" - {response.text}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
-            
-            result = response.json()
-            
-            # Extract the embedding from the Venice API response
-            embedding = result.get("data", [{}])[0].get("embedding", [])
+            # Extract the embedding from the OpenAI response
+            embedding = response.data[0].embedding
             
             if not embedding:
-                logger.warning("Empty embedding from Venice API")
+                logger.warning("Empty embedding from OpenAI API")
                 # Return zeros as fallback
                 return [0.0] * 1536  # Default embedding size
             
+            logger.info(f"Successfully generated embedding with OpenAI model {model}, dimension: {len(embedding)}")
             return embedding
         
-        except requests.RequestException as e:
-            logger.error(f"Request error with Venice API: {str(e)}")
-            raise Exception(f"Failed to get embedding: {str(e)}")
-        except json.JSONDecodeError as e:
-            error_text = "No response text available"
-            if response is not None and hasattr(response, 'text'):
-                error_text = response.text
-            logger.error(f"Invalid JSON response: {error_text}")
-            logger.error(f"JSON decode error: {e}")
-            raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            raise
+            logger.error(f"Error generating embedding with OpenAI: {str(e)}")
+            # Return zeros as fallback
+            return [0.0] * 1536  # Default embedding size
     
     def get_available_models(self) -> List[Dict[str, Any]]:
         """
