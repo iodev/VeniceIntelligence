@@ -25,8 +25,6 @@ class VeniceClient:
             embeddings_api_key: Optional separate API key for embeddings endpoint
             base_url: Base URL for Venice API (native endpoint)
         """
-        # Import json at the module level
-        import json
         self.api_key = api_key
         self.embeddings_api_key = embeddings_api_key or api_key  # Fall back to main API key if not provided
         self.base_url = base_url
@@ -124,38 +122,29 @@ class VeniceClient:
         if stop:
             payload["stop"] = stop
         
+        response = None
         try:
             # Use chat endpoint for Venice.ai API
             logger.info(f"Calling Venice API at: {self.base_url}/chat/completions")
-            # Store response variable at a higher scope
-            response = None
-            try:
-                response = self.session.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    timeout=60  # Longer timeout for generation
-                )
-                
-                if response.status_code != 200:
-                    error_msg = f"Venice API error: {response.status_code} - {response.text}"
-                    logger.error(error_msg)
-                    raise Exception(error_msg)
-                
-                result = response.json()
-                logger.debug(f"Response JSON: {result}")
-                
-                # Extract the generated text from the Venice.ai Chat API response
-                generated_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-            except json.JSONDecodeError as e:
-                error_text = "No response text available"
-                if response is not None:
-                    try:
-                        error_text = response.text
-                    except:
-                        pass
-                logger.error(f"Invalid JSON response: {error_text}")
-                logger.error(f"JSON decode error: {e}")
-                raise Exception(f"Invalid response format from Venice API: {error_text}")
+            
+            response = self.session.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                timeout=60  # Longer timeout for generation
+            )
+            
+            if response.status_code != 200:
+                error_msg = f"Venice API error: {response.status_code}"
+                if hasattr(response, 'text'):
+                    error_msg += f" - {response.text}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            
+            result = response.json()
+            logger.debug(f"Response JSON: {result}")
+            
+            # Extract the generated text from the Venice.ai Chat API response
+            generated_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
             
             if not generated_text:
                 logger.warning("Empty response from Venice API")
@@ -166,13 +155,10 @@ class VeniceClient:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to communicate with Venice API: {str(e)}")
         except json.JSONDecodeError as e:
-            error_text = ""
-            try:
-                if 'response' in locals():
-                    error_text = response.text
-                    logger.error(f"Invalid JSON response: {error_text}")
-            except:
-                pass
+            error_text = "No response text available"
+            if response is not None and hasattr(response, 'text'):
+                error_text = response.text
+            logger.error(f"Invalid JSON response: {error_text}")
             logger.error(f"JSON decode error: {e}")
             raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
@@ -182,7 +168,7 @@ class VeniceClient:
     def get_embedding(
         self, 
         text: str, 
-        model: str = "llama-3.2-3b"
+        model: str = "text-embedding-bge-m3"
     ) -> List[float]:
         """
         Get embedding vector for text via native Venice API
@@ -204,54 +190,41 @@ class VeniceClient:
             "encoding_format": "float"  # As per Venice.ai docs
         }
         
+        response = None
         try:
-            # Store response variable at a higher scope
-            response = None
-            try:
-                # Use the embeddings-specific session with the correct API key
-                response = self.embeddings_session.post(
-                    f"{self.base_url}/embeddings",
-                    json=payload
-                )
-                
-                if response.status_code != 200:
-                    error_msg = f"Venice API error: {response.status_code} - {response.text}"
-                    logger.error(error_msg)
-                    raise Exception(error_msg)
-                
-                result = response.json()
-                
-                # Extract the embedding from the Venice API response
-                embedding = result.get("data", [{}])[0].get("embedding", [])
-                
-                if not embedding:
-                    logger.warning("Empty embedding from Venice API")
-                    # Return zeros as fallback
-                    return [0.0] * 1536  # Default embedding size
-                
-                return embedding
-            except json.JSONDecodeError as e:
-                error_text = "No response text available"
-                if response is not None:
-                    try:
-                        error_text = response.text
-                    except:
-                        pass
-                logger.error(f"Invalid JSON response: {error_text}")
-                logger.error(f"JSON decode error: {e}")
-                raise Exception(f"Invalid response format from Venice API: {error_text}")
+            # Use the embeddings-specific session with the correct API key
+            response = self.embeddings_session.post(
+                f"{self.base_url}/embeddings",
+                json=payload
+            )
+            
+            if response.status_code != 200:
+                error_msg = f"Venice API error: {response.status_code}"
+                if hasattr(response, 'text'):
+                    error_msg += f" - {response.text}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            
+            result = response.json()
+            
+            # Extract the embedding from the Venice API response
+            embedding = result.get("data", [{}])[0].get("embedding", [])
+            
+            if not embedding:
+                logger.warning("Empty embedding from Venice API")
+                # Return zeros as fallback
+                return [0.0] * 1536  # Default embedding size
+            
+            return embedding
         
         except requests.RequestException as e:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to get embedding: {str(e)}")
         except json.JSONDecodeError as e:
-            error_text = ""
-            try:
-                if 'response' in locals():
-                    error_text = response.text
-                    logger.error(f"Invalid JSON response: {error_text}")
-            except:
-                pass
+            error_text = "No response text available"
+            if response is not None and hasattr(response, 'text'):
+                error_text = response.text
+            logger.error(f"Invalid JSON response: {error_text}")
             logger.error(f"JSON decode error: {e}")
             raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
@@ -265,45 +238,32 @@ class VeniceClient:
         Returns:
             List of model information
         """
+        response = None
         try:
-            # Store response at a higher scope
-            response = None
-            try:
-                response = self.session.get(f"{self.base_url}/models")
-                
-                if response.status_code != 200:
-                    error_msg = f"Venice API error: {response.status_code} - {response.text}"
-                    logger.error(error_msg)
-                    raise Exception(error_msg)
-                
-                result = response.json()
-                
-                # Extract models list from Venice API response
-                models = result.get("data", [])
-                
-                return models
-            except json.JSONDecodeError as e:
-                error_text = "No response text available"
-                if response is not None:
-                    try:
-                        error_text = response.text
-                    except:
-                        pass
-                logger.error(f"Invalid JSON response: {error_text}")
-                logger.error(f"JSON decode error: {e}")
-                raise Exception(f"Invalid response format from Venice API: {error_text}")
+            response = self.session.get(f"{self.base_url}/models")
+            
+            if response.status_code != 200:
+                error_msg = f"Venice API error: {response.status_code}"
+                if hasattr(response, 'text'):
+                    error_msg += f" - {response.text}"
+                logger.error(error_msg)
+                raise Exception(error_msg)
+            
+            result = response.json()
+            
+            # Extract models list from Venice API response
+            models = result.get("data", [])
+            
+            return models
         
         except requests.RequestException as e:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to get models: {str(e)}")
         except json.JSONDecodeError as e:
-            error_text = ""
-            try:
-                if 'response' in locals():
-                    error_text = response.text
-                    logger.error(f"Invalid JSON response: {error_text}")
-            except:
-                pass
+            error_text = "No response text available"
+            if response is not None and hasattr(response, 'text'):
+                error_text = response.text
+            logger.error(f"Invalid JSON response: {error_text}")
             logger.error(f"JSON decode error: {e}")
             raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
