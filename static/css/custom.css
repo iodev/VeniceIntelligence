@@ -1,0 +1,162 @@
+/* Chat interface styles */
+.chat-history {
+    height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--bs-gray-700);
+    border-radius: 0.25rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background-color: var(--bs-gray-900);
+}
+
+.user-message, .assistant-message, .system-message {
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    max-width: 85%;
+}
+
+.user-message {
+    background-color: var(--bs-primary);
+    color: white;
+    margin-left: auto;
+    border-top-right-radius: 0;
+}
+
+.assistant-message {
+    background-color: var(--bs-gray-700);
+    margin-right: auto;
+    border-top-left-radius: 0;
+}
+
+.system-message {
+    background-color: var(--bs-gray-800);
+    margin: 0 auto;
+    text-align: center;
+    font-style: italic;
+    color: var(--bs-gray-400);
+    max-width: 90%;
+}
+
+/* Model performance styles */
+.model-stats {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.model-stat-card {
+    padding: 10px;
+    margin-bottom: 1rem;
+    border-radius: 0.25rem;
+    border: 1px solid var(--bs-gray-700);
+    background-color: var(--bs-gray-800);
+}
+
+.model-stat-card.current-model {
+    border-color: var(--bs-success);
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
+.model-stats-details {
+    display: flex;
+    justify-content: space-between;
+    color: var(--bs-gray-400);
+}
+
+/* Typing indicator for chat */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+}
+
+.typing-indicator span {
+    height: 8px;
+    width: 8px;
+    background-color: var(--bs-gray-500);
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 3px;
+    animation: typing 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-indicator span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-indicator span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    50% {
+        transform: scale(1.3);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+}
+
+/* History page styles */
+.history-list {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.interaction-content {
+    padding-left: 1rem;
+    border-left: 3px solid var(--bs-gray-600);
+}
+
+.model-detail-card {
+    padding: 1rem;
+    border-radius: 0.25rem;
+    background-color: var(--bs-gray-800);
+    border: 1px solid var(--bs-gray-700);
+}
+
+.current-model-card {
+    border-color: var(--bs-success);
+    background-color: rgba(25, 135, 84, 0.1);
+}
+
+.stat-card {
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    background-color: var(--bs-gray-900);
+    text-align: center;
+    height: 100%;
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--bs-gray-500);
+}
+
+.stat-value {
+    font-weight: bold;
+    color: var(--bs-gray-200);
+}
+
+/* Code formatting */
+pre {
+    background-color: var(--bs-gray-900);
+    border-radius: 0.25rem;
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+code {
+    font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.875em;
+}
