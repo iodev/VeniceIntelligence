@@ -69,8 +69,8 @@ class Agent:
         # Create context from relevant memories
         context = self._create_context_from_memories(relevant_memories)
         
-        # Construct prompt with context
-        prompt = self._construct_prompt(query, system_prompt, context)
+        # Construct messages with context
+        messages = self._construct_prompt(query, system_prompt, context)
         
         # If it's time to evaluate models, try a different one
         if self.interaction_count % config.MODEL_EVALUATION_INTERVAL == 0:
@@ -83,7 +83,7 @@ class Agent:
         # Call the model
         start_time = time.time()
         try:
-            response = self.venice_client.generate(prompt, model=model_to_use)
+            response = self.venice_client.generate(messages, model=model_to_use)
             success = True
         except Exception as e:
             logger.error(f"Error generating response with model {model_to_use}: {str(e)}")
@@ -91,7 +91,7 @@ class Agent:
             if model_to_use != self.current_model:
                 try:
                     logger.info(f"Falling back to current model: {self.current_model}")
-                    response = self.venice_client.generate(prompt, model=self.current_model)
+                    response = self.venice_client.generate(messages, model=self.current_model)
                     model_to_use = self.current_model
                     success = True
                 except Exception as e2:
