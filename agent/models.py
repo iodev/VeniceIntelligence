@@ -94,7 +94,7 @@ class VeniceClient:
         top_p: float = 0.9,
         stop: Optional[List[str]] = None,
         stream: bool = False
-    ) -> Union[str, Iterator[str]]:
+    ) -> Any:
         """
         Generate text using Venice.ai Chat API
         
@@ -168,6 +168,101 @@ class VeniceClient:
             raise Exception(f"Invalid response format from Venice API: {error_text}")
         except Exception as e:
             logger.error(f"Unexpected error: {str(e)}")
+            raise
+    
+    def _generate_streaming(
+        self,
+        messages: list,
+        model: str = "mistral-31-24b",
+        max_tokens: int = 500,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        stop: Optional[List[str]] = None
+    ):
+        """
+        Generate text using Venice.ai Chat API with streaming support
+        
+        Args:
+            messages: List of message objects (system, user, etc.)
+            model: Model ID to use
+            max_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature (0-1)
+            top_p: Top-p sampling parameter
+            stop: Optional list of stop sequences
+            
+        Yields:
+            Chunks of generated text as they become available
+        """
+        if not messages:
+            raise ValueError("Messages cannot be empty")
+            
+        logger.info(f"Generating with streaming using model: {model}")
+        
+        # Venice.ai Chat API payload
+        payload = {
+            "model": model,
+            "messages": messages,
+            "max_completion_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": True
+        }
+        
+        if stop:
+            payload["stop"] = stop
+        
+        try:
+            # Use chat endpoint for Venice.ai API with streaming
+            logger.info(f"Calling Venice API streaming at: {self.base_url}/chat/completions")
+            
+            with self.session.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                timeout=60,  # Longer timeout for generation
+                stream=True
+            ) as response:
+                if response.status_code != 200:
+                    error_msg = f"Venice API streaming error: {response.status_code}"
+                    if hasattr(response, 'text'):
+                        error_msg += f" - {response.text}"
+                    logger.error(error_msg)
+                    raise Exception(error_msg)
+                
+                # Process the streamed response
+                accumulated_text = ""
+                for line in response.iter_lines():
+                    if line:
+                        try:
+                            # Remove 'data: ' prefix if present (SSE format)
+                            if line.startswith(b'data: '):
+                                line = line[6:]
+                            
+                            # Skip empty lines or [DONE] markers
+                            if not line or line == b'[DONE]':
+                                continue
+                                
+                            chunk_data = json.loads(line)
+                            
+                            # Extract the delta text
+                            delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if delta:
+                                accumulated_text += delta
+                                yield delta
+                        except json.JSONDecodeError:
+                            logger.warning(f"Could not parse streaming response line: {line}")
+                            continue
+                        except Exception as e:
+                            logger.warning(f"Error processing streaming response: {e}")
+                            continue
+                
+                if not accumulated_text:
+                    logger.warning("Empty accumulated response from Venice API streaming")
+        
+        except requests.RequestException as e:
+            logger.error(f"Request error with Venice API streaming: {str(e)}")
+            raise Exception(f"Failed to communicate with Venice API streaming: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in streaming: {str(e)}")
             raise
     
     def get_embedding(

@@ -140,52 +140,127 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clear input
         userInput.value = '';
         
-        // Add loading indicator
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'assistant-message loading';
-        loadingDiv.innerHTML = `
-            <div class="typing-indicator">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-        `;
-        chatHistory.appendChild(loadingDiv);
-        chatHistory.scrollTop = chatHistory.scrollHeight;
+        // Use streaming for better UX with long responses
+        const useStreaming = true;
         
-        // Send to backend
-        fetch('/chat', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                query: query,
-                system_prompt: currentSystemPrompt
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            // Remove loading indicator
-            chatHistory.removeChild(loadingDiv);
+        if (useStreaming) {
+            // Add streaming response container
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'assistant-message';
+            messageDiv.innerHTML = `<p class="streaming-response"></p>`;
+            chatHistory.appendChild(messageDiv);
             
-            if (data.error) {
-                addMessageToChat('system', `Error: ${data.error}`);
-            } else {
-                addMessageToChat('assistant', data.response);
-                // Update model display if needed
-                if (data.model_used) {
-                    currentModelDisplay.textContent = formatModelName(data.model_used);
+            const responseElement = messageDiv.querySelector('.streaming-response');
+            
+            // Add initial typing indicator
+            responseElement.innerHTML = `
+                <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            // Connect to streaming endpoint
+            const eventSource = new EventSource(`/chat?stream=true&query=${encodeURIComponent(query)}&system_prompt=${encodeURIComponent(currentSystemPrompt)}`);
+            
+            let accumulatedResponse = '';
+            let currentModel = '';
+            
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'start') {
+                    // Connection established, model information
+                    currentModel = data.model_used;
+                    // Clear typing indicator
+                    responseElement.innerHTML = '';
+                } 
+                else if (data.type === 'chunk') {
+                    // Append new text chunk
+                    accumulatedResponse += data.chunk;
+                    responseElement.innerHTML = formatMessage(accumulatedResponse);
+                    chatHistory.scrollTop = chatHistory.scrollHeight;
+                } 
+                else if (data.type === 'end') {
+                    // Streaming complete
+                    eventSource.close();
+                    
+                    // Update model display
+                    if (currentModel) {
+                        currentModelDisplay.textContent = formatModelName(currentModel);
+                    }
+                    
+                    // Refresh model stats
+                    loadModelStats();
+                } 
+                else if (data.type === 'error') {
+                    // Handle error
+                    eventSource.close();
+                    responseElement.innerHTML = `<span class="text-danger">Error: ${data.error}</span>`;
                 }
-                // Refresh model stats
-                loadModelStats();
-            }
-        })
-        .catch(error => {
-            // Remove loading indicator
-            chatHistory.removeChild(loadingDiv);
-            addMessageToChat('system', `Error: ${error.message}`);
-        });
+            };
+            
+            eventSource.onerror = function() {
+                eventSource.close();
+                if (accumulatedResponse === '') {
+                    responseElement.innerHTML = `<span class="text-danger">Error: Connection failed</span>`;
+                }
+            };
+        } 
+        else {
+            // Fallback to non-streaming for older browsers
+            
+            // Add loading indicator
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'assistant-message loading';
+            loadingDiv.innerHTML = `
+                <div class="typing-indicator">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            chatHistory.appendChild(loadingDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            
+            // Send to backend
+            fetch('/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    query: query,
+                    system_prompt: currentSystemPrompt,
+                    stream: false
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Remove loading indicator
+                chatHistory.removeChild(loadingDiv);
+                
+                if (data.error) {
+                    addMessageToChat('system', `Error: ${data.error}`);
+                } else {
+                    addMessageToChat('assistant', data.response);
+                    // Update model display if needed
+                    if (data.model_used) {
+                        currentModelDisplay.textContent = formatModelName(data.model_used);
+                    }
+                    // Refresh model stats
+                    loadModelStats();
+                }
+            })
+            .catch(error => {
+                // Remove loading indicator
+                chatHistory.removeChild(loadingDiv);
+                addMessageToChat('system', `Error: ${error.message}`);
+            });
+        }
     }
     
     function addMessageToChat(role, content) {

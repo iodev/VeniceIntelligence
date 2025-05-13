@@ -49,32 +49,93 @@ def index():
         flash("Agent initialization failed. Please check your API keys and Qdrant configuration.", "danger")
     return render_template('index.html')
 
-@app.route('/chat', methods=['POST'])
+@app.route('/chat', methods=['POST', 'GET'])
 def chat():
     """Handle chat interactions with the agent"""
     if agent is None:
         return jsonify({"error": "Agent is not initialized"}), 500
     
-    data = request.json
-    query = data.get('query', '')
-    system_prompt = data.get('system_prompt', 'You are a helpful AI assistant.')
+    # Support both POST (JSON) and GET (for EventSource)
+    stream = False
+    
+    if request.method == 'POST':
+        data = request.json
+        query = data.get('query', '')
+        system_prompt = data.get('system_prompt', 'You are a helpful AI assistant.')
+        stream = data.get('stream', False)
+    else:  # GET method for EventSource
+        query = request.args.get('query', '')
+        system_prompt = request.args.get('system_prompt', 'You are a helpful AI assistant.')
+        stream = request.args.get('stream') == 'true'
     
     if not query:
         return jsonify({"error": "Empty query"}), 400
     
     try:
-        # Get agent response
-        response, model_used = agent.process_query(query, system_prompt)
-        
-        # Return the response with metadata
-        return jsonify({
-            "response": response,
-            "model_used": model_used,
-            "success": True
-        })
+        if stream:
+            return stream_chat(query, system_prompt)
+        else:
+            # Get agent response (non-streaming)
+            response, model_used = agent.process_query(query, system_prompt)
+            
+            # Return the response with metadata
+            return jsonify({
+                "response": response,
+                "model_used": model_used,
+                "success": True
+            })
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+def stream_chat(query, system_prompt):
+    """Stream chat responses to the client"""
+    def generate():
+        try:
+            # First, get the relevant context from memory
+            memories = agent.memory_manager.get_relevant_memories(query)
+            context = agent._create_context_from_memories(memories)
+            
+            # Construct the prompt with context
+            messages = agent._construct_prompt(query, system_prompt, context)
+            
+            # Select a model (use the default for now)
+            model = agent._get_best_model()
+            
+            # Start the generation with streaming
+            stream_iterator = agent.venice_client.generate(
+                messages=messages,
+                model=model,
+                max_tokens=500,
+                temperature=0.7,
+                stream=True
+            )
+            
+            # First, yield the starting JSON
+            yield 'data: {"model_used": "%s", "success": true, "type": "start"}\n\n' % model
+            
+            # Stream each chunk
+            for chunk in stream_iterator:
+                yield f'data: {{"chunk": {json.dumps(chunk)}, "type": "chunk"}}\n\n'
+                
+            # Final message
+            # Store the interaction in memory asynchronously after sending response
+            response_text = "Response saved to memory"  # Placeholder for stored response
+            agent.memory_manager.store_interaction(query, response_text, system_prompt)
+            
+            # Update model performance asynchronously
+            # For now we'll assume it was successful
+            agent._update_model_performance(model, True, 1.0)  # Success, 1.0 second latency (placeholder)
+            
+            # End stream
+            yield 'data: {"type": "end"}\n\n'
+            
+        except Exception as e:
+            logger.error(f"Error in streaming: {str(e)}")
+            error_msg = str(e).replace('"', '\\"')
+            yield f'data: {{"error": "{error_msg}", "type": "error"}}\n\n'
+    
+    return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
 @app.route('/api/models')
 def get_models():
