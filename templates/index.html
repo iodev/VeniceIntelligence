@@ -3,28 +3,115 @@
 {% block content %}
 <div class="row">
     <div class="col-md-9">
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="bi bi-chat-dots me-2"></i>
-                    Chat with Agent
-                </h5>
-                <button class="btn btn-sm btn-outline-secondary" id="settingsBtn" data-bs-toggle="modal" data-bs-target="#settingsModal">
-                    <i class="bi bi-gear"></i> Settings
+        <ul class="nav nav-tabs mb-3" id="agentTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="chat-tab" data-bs-toggle="tab" data-bs-target="#chatTab" 
+                        type="button" role="tab" aria-controls="chatTab" aria-selected="true">
+                    <i class="bi bi-chat-dots me-2"></i>Chat
                 </button>
-            </div>
-            <div class="card-body">
-                <div id="chatHistory" class="chat-history mb-3">
-                    <div class="system-message">
-                        <p>Hello! I'm a self-learning agent powered by Venice.ai. How can I help you today?</p>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="image-tab" data-bs-toggle="tab" data-bs-target="#imageTab" 
+                        type="button" role="tab" aria-controls="imageTab" aria-selected="false">
+                    <i class="bi bi-image me-2"></i>Generate Images
+                </button>
+            </li>
+        </ul>
+        
+        <div class="tab-content" id="agentTabsContent">
+            <!-- Chat Tab -->
+            <div class="tab-pane fade show active" id="chatTab" role="tabpanel" aria-labelledby="chat-tab">
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-chat-dots me-2"></i>
+                            Chat with Agent
+                        </h5>
+                        <button class="btn btn-sm btn-outline-secondary" id="settingsBtn" data-bs-toggle="modal" data-bs-target="#settingsModal">
+                            <i class="bi bi-gear"></i> Settings
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="chatHistory" class="chat-history mb-3">
+                            <div class="system-message">
+                                <p>Hello! I'm a self-learning agent powered by Venice.ai. How can I help you today?</p>
+                            </div>
+                        </div>
+                        
+                        <div class="input-group">
+                            <textarea id="userInput" class="form-control" placeholder="Type your message here..." rows="2"></textarea>
+                            <button id="sendBtn" class="btn btn-primary">
+                                <i class="bi bi-send"></i> Send
+                            </button>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="input-group">
-                    <textarea id="userInput" class="form-control" placeholder="Type your message here..." rows="2"></textarea>
-                    <button id="sendBtn" class="btn btn-primary">
-                        <i class="bi bi-send"></i> Send
-                    </button>
+            </div>
+            
+            <!-- Image Generation Tab -->
+            <div class="tab-pane fade" id="imageTab" role="tabpanel" aria-labelledby="image-tab">
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-image me-2"></i>
+                            Generate Images
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="imageGenForm">
+                            <div class="mb-3">
+                                <label for="imagePrompt" class="form-label">Image Description</label>
+                                <textarea id="imagePrompt" class="form-control" rows="3" 
+                                          placeholder="Describe the image you want to generate..."></textarea>
+                            </div>
+                            
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="imageModel" class="form-label">Image Model</label>
+                                    <select id="imageModel" class="form-select">
+                                        <option value="stable-diffusion-xl-1024-v1-0">Stable Diffusion XL</option>
+                                        <!-- More options will be loaded dynamically -->
+                                    </select>
+                                </div>
+                                
+                                <div class="col-md-3">
+                                    <label for="imageSize" class="form-label">Size</label>
+                                    <select id="imageSize" class="form-select">
+                                        <option value="1024x1024">1024x1024</option>
+                                        <option value="896x1152">896x1152</option>
+                                        <option value="1152x896">1152x896</option>
+                                        <option value="768x768">768x768</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="col-md-3">
+                                    <label for="numImages" class="form-label">Count</label>
+                                    <select id="numImages" class="form-select">
+                                        <option value="1">1 image</option>
+                                        <option value="2">2 images</option>
+                                        <option value="4">4 images</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button type="submit" id="generateBtn" class="btn btn-primary">
+                                    <i class="bi bi-brush"></i> Generate Image
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <div id="imageResults" class="mt-4">
+                            <!-- Generated images will appear here -->
+                        </div>
+                        
+                        <div id="imageLoading" class="text-center my-5 d-none">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Generating image...</span>
+                            </div>
+                            <p class="mt-2">Creating your image...</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -430,6 +517,126 @@ document.addEventListener('DOMContentLoaded', function() {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength) + '...';
     }
+    
+    // Image generation functionality
+    const imageGenForm = document.getElementById('imageGenForm');
+    const imagePrompt = document.getElementById('imagePrompt');
+    const imageModel = document.getElementById('imageModel');
+    const imageSize = document.getElementById('imageSize');
+    const numImages = document.getElementById('numImages');
+    const generateBtn = document.getElementById('generateBtn');
+    const imageResults = document.getElementById('imageResults');
+    const imageLoading = document.getElementById('imageLoading');
+    
+    // Load available image models
+    fetch('/api/image-models')
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                console.error("Error loading image models:", data.error);
+                return;
+            }
+            
+            if (data.models && data.models.length > 0) {
+                // Clear default option
+                imageModel.innerHTML = '';
+                
+                // Add available models
+                data.models.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.id;
+                    option.textContent = model.id;
+                    imageModel.appendChild(option);
+                });
+            }
+        })
+        .catch(error => {
+            console.error("Error fetching image models:", error);
+        });
+    
+    // Handle image generation form submission
+    imageGenForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const prompt = imagePrompt.value.trim();
+        if (!prompt) {
+            alert('Please enter an image description');
+            return;
+        }
+        
+        // Show loading indicator
+        imageLoading.classList.remove('d-none');
+        imageResults.innerHTML = '';
+        generateBtn.disabled = true;
+        
+        // Call the API
+        fetch('/api/generate-image', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                prompt: prompt,
+                model: imageModel.value,
+                size: imageSize.value,
+                num_images: parseInt(numImages.value)
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Hide loading indicator
+            imageLoading.classList.add('d-none');
+            generateBtn.disabled = false;
+            
+            if (data.error) {
+                imageResults.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        Error: ${data.error}
+                    </div>
+                `;
+                return;
+            }
+            
+            // Display the images
+            let resultsHtml = `
+                <div class="mb-3">
+                    <h5>Generated with ${data.model_used}</h5>
+                    <p class="text-muted small">Prompt: "${prompt}"</p>
+                </div>
+                <div class="row">
+            `;
+            
+            data.images.forEach(image => {
+                resultsHtml += `
+                    <div class="col-md-${12 / data.images.length} mb-3">
+                        <div class="card">
+                            <img src="${image.url}" class="card-img-top" alt="Generated image">
+                            <div class="card-body">
+                                <a href="${image.url}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                    <i class="bi bi-download"></i> View Full Size
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            resultsHtml += '</div>';
+            imageResults.innerHTML = resultsHtml;
+        })
+        .catch(error => {
+            imageLoading.classList.add('d-none');
+            generateBtn.disabled = false;
+            
+            imageResults.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Error: ${error.message}
+                </div>
+            `;
+        });
+    });
 });
 </script>
 {% endblock %}
