@@ -5,8 +5,47 @@ from agent.memory import MemoryManager
 from agent.models import VeniceClient
 from agent.evaluation import evaluate_model_response
 import config
+from datetime import datetime
+from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+def init_default_models():
+    """
+    Initialize default models in the database if they don't already exist
+    """
+    from models import ModelPerformance
+    from main import db
+    
+    # Define default Venice.AI models
+    default_models = [
+        "mistral-31-24b",  # High-quality generalist model
+        "mistral-29-7b",   # Smaller but faster model
+        "phi3-mini-4k",    # Compact model for simple tasks
+        "llama-3-15b",     # Recent model with strong performance
+    ]
+    
+    # Check if we already have models in the database
+    existing_models = ModelPerformance.query.all()
+    if existing_models:
+        logger.info(f"Found {len(existing_models)} existing models in database")
+        return
+    
+    # Add default models to database
+    for model_id in default_models:
+        model = ModelPerformance(
+            model_id=model_id,
+            total_calls=0,
+            successful_calls=0,
+            total_latency=0.0,
+            quality_score=0.0,
+            quality_evaluations=0,
+            is_current=(model_id == "mistral-31-24b")  # Set the default model
+        )
+        db.session.add(model)
+    
+    db.session.commit()
+    logger.info(f"Initialized {len(default_models)} default models in database")
 
 class Agent:
     """
@@ -30,25 +69,32 @@ class Agent:
             available_models: List of available Venice.ai models to use
             default_model: Default model to start with
         """
+        from models import ModelPerformance
+        from main import db
+        
         self.venice_client = venice_client
         self.memory_manager = memory_manager
         self.available_models = available_models
-        self.current_model = default_model
         
-        # Model performance tracking
-        self.model_performance = {model: {
-            "success_rate": 0.0,
-            "average_latency": 0.0,
-            "total_calls": 0,
-            "successes": 0,
-            "failures": 0,
-            "total_latency": 0.0,
-            "last_used": None
-        } for model in available_models}
+        # Load or initialize models in database
+        init_default_models()
+        
+        # Get current model from database
+        current_model_record = ModelPerformance.query.filter_by(is_current=True).first()
+        if current_model_record:
+            self.current_model = current_model_record.model_id
+        else:
+            # If no current model is set, use the provided default
+            self.current_model = default_model
+            # And mark it as current in the database
+            model_record = ModelPerformance.query.filter_by(model_id=default_model).first()
+            if model_record:
+                model_record.is_current = True
+                db.session.commit()
         
         # Interaction counter for model evaluation
         self.interaction_count = 0
-        logger.info(f"Agent initialized with default model: {default_model}")
+        logger.info(f"Agent initialized with current model: {self.current_model}")
     
     def process_query(self, query: str, system_prompt: str) -> Tuple[str, str]:
         """
@@ -247,36 +293,55 @@ class Agent:
             success: Whether the model call succeeded
             latency: Response time in seconds
         """
-        if model not in self.model_performance:
-            self.model_performance[model] = {
-                "success_rate": 0.0,
-                "average_latency": 0.0,
-                "total_calls": 0,
-                "successes": 0,
-                "failures": 0,
-                "total_latency": 0.0,
-                "last_used": None
-            }
+        from models import ModelPerformance
+        from main import db
         
-        perf = self.model_performance[model]
-        perf["total_calls"] += 1
+        # Get model record from database
+        model_record = ModelPerformance.query.filter_by(model_id=model).first()
+        
+        # If model doesn't exist, create it
+        if not model_record:
+            model_record = ModelPerformance(
+                model_id=model,
+                total_calls=0,
+                successful_calls=0,
+                total_latency=0.0,
+                quality_score=0.0,
+                quality_evaluations=0,
+                is_current=(model == self.current_model)
+            )
+            db.session.add(model_record)
+        
+        # Update metrics
+        model_record.total_calls += 1
         
         if success:
-            perf["successes"] += 1
-        else:
-            perf["failures"] += 1
+            model_record.successful_calls += 1
         
-        perf["success_rate"] = perf["successes"] / perf["total_calls"]
-        perf["total_latency"] += latency
-        perf["average_latency"] = perf["total_latency"] / perf["total_calls"]
-        perf["last_used"] = time.time()
+        model_record.total_latency += latency
+        model_record.updated_at = datetime.utcnow()
         
-        # If this model is performing better, update current model
-        if (success and model != self.current_model and 
-            perf["success_rate"] > self.model_performance[self.current_model]["success_rate"] and
-            perf["total_calls"] >= 5):
-            logger.info(f"Switching default model from {self.current_model} to {model} based on performance")
-            self.current_model = model
+        # Save changes
+        db.session.commit()
+        
+        # Check if this model is performing better than current model
+        if success and model != self.current_model:
+            current_model_record = ModelPerformance.query.filter_by(model_id=self.current_model).first()
+            
+            if (current_model_record and 
+                model_record.success_rate > current_model_record.success_rate and
+                model_record.total_calls >= 5):
+                
+                # Update current model flag
+                logger.info(f"Switching default model from {self.current_model} to {model} based on performance")
+                
+                # Update database records
+                current_model_record.is_current = False
+                model_record.is_current = True
+                db.session.commit()
+                
+                # Update local reference
+                self.current_model = model
     
     def _update_model_quality(self, model: str, quality_score: float) -> None:
         """
@@ -286,12 +351,25 @@ class Agent:
             model: Model ID
             quality_score: Evaluation score (0-1)
         """
-        if model not in self.model_performance:
+        from models import ModelPerformance
+        from main import db
+        
+        # Get model record from database
+        model_record = ModelPerformance.query.filter_by(model_id=model).first()
+        
+        if not model_record:
             return
             
-        # We could enhance this with more sophisticated quality tracking
-        # For now, we just log it
-        logger.info(f"Model {model} quality score: {quality_score}")
+        # Update quality metrics
+        model_record.quality_score += quality_score
+        model_record.quality_evaluations += 1
+        model_record.updated_at = datetime.utcnow()
+        
+        # Save changes
+        db.session.commit()
+        
+        # Log quality score
+        logger.info(f"Model {model} quality score: {quality_score}, avg: {model_record.average_quality}")
     
     def get_models_performance(self) -> Dict[str, Dict]:
         """
@@ -300,11 +378,24 @@ class Agent:
         Returns:
             Dictionary of model performance metrics
         """
-        # Add current_model flag to the model data
+        from models import ModelPerformance
+        
+        # Get all models from database
+        model_records = ModelPerformance.query.all()
+        
+        # Format for the API response
         result = {}
-        for model, perf in self.model_performance.items():
-            model_data = perf.copy()
-            model_data["is_current"] = (model == self.current_model)
-            result[model] = model_data
+        for record in model_records:
+            result[record.model_id] = {
+                "success_rate": record.success_rate,
+                "average_latency": record.average_latency,
+                "total_calls": record.total_calls,
+                "successes": record.successful_calls,
+                "failures": record.total_calls - record.successful_calls,
+                "total_latency": record.total_latency,
+                "average_quality": record.average_quality,
+                "is_current": record.is_current,
+                "last_used": record.updated_at.timestamp() if record.updated_at else None
+            }
         
         return result

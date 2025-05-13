@@ -1,53 +1,69 @@
 import os
 import logging
 import json
-from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash, Response, stream_with_context
+from flask import render_template, request, jsonify, session, redirect, url_for, flash, Response, stream_with_context, current_app
+from main import app, db  # Import Flask app from main.py
 from agent.core import Agent
 from agent.memory import MemoryManager
 from agent.models import VeniceClient
 from agent.image import VeniceImageClient
 import config
 
-# Initialize Flask app
-app = Flask(__name__)
-app.secret_key = os.environ.get("SESSION_SECRET", os.urandom(24).hex())
-app.wsgi_app = app.wsgi_app
-
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Initialize the agent components
-try:
-    venice_client = VeniceClient(
-        api_key=config.VENICE_API_KEY,
-        openai_api_key=config.OPENAI_API_KEY
-    )
+# Create references for the agent components
+venice_client = None
+venice_image_client = None
+memory_manager = None
+agent = None
+
+# Function to initialize the agent (to be called within app context)
+def init_agent():
+    global venice_client, venice_image_client, memory_manager, agent
     
-    # Initialize the image generation client
-    venice_image_client = VeniceImageClient(
-        api_key=config.VENICE_API_KEY
-    )
-    
-    memory_manager = MemoryManager(
-        qdrant_url=config.QDRANT_URL,
-        qdrant_api_key=config.QDRANT_API_KEY,
-        collection_name=config.QDRANT_COLLECTION_NAME,
-        vector_size=config.QDRANT_VECTOR_SIZE,
-        embedding_model=config.EMBEDDING_MODEL,
-        venice_client=venice_client
-    )
-    agent = Agent(
-        venice_client=venice_client,
-        memory_manager=memory_manager,
-        available_models=config.AVAILABLE_MODELS,
-        default_model=config.DEFAULT_MODEL
-    )
-    logger.info("Agent initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize agent: {str(e)}")
-    agent = None
-    venice_image_client = None
+    try:
+        # Initialize Venice API clients
+        venice_client = VeniceClient(
+            api_key=config.VENICE_API_KEY,
+            openai_api_key=config.OPENAI_API_KEY
+        )
+        
+        # Initialize the image generation client
+        venice_image_client = VeniceImageClient(
+            api_key=config.VENICE_API_KEY
+        )
+        
+        # Initialize memory manager
+        memory_manager = MemoryManager(
+            qdrant_url=config.QDRANT_URL,
+            qdrant_api_key=config.QDRANT_API_KEY,
+            collection_name=config.QDRANT_COLLECTION_NAME,
+            vector_size=config.QDRANT_VECTOR_SIZE,
+            embedding_model=config.EMBEDDING_MODEL,
+            venice_client=venice_client
+        )
+        
+        # Initialize agent with the components
+        agent = Agent(
+            venice_client=venice_client,
+            memory_manager=memory_manager,
+            available_models=config.AVAILABLE_MODELS,
+            default_model=config.DEFAULT_MODEL
+        )
+        logger.info("Agent initialized successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize agent: {str(e)}")
+        return False
+
+# Initialize the agent within app context
+with app.app_context():
+    # Initialize the agent
+    init_success = init_agent()
+    if not init_success:
+        logger.error("Failed to initialize agent properly")
 
 @app.route('/')
 def index():
