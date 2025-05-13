@@ -205,3 +205,50 @@ def page_not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return render_template('500.html'), 500
+    
+@app.route('/api/generate-image', methods=['POST'])
+def generate_image():
+    """Generate an image using Venice.ai's image generation API"""
+    if venice_image_client is None:
+        return jsonify({"error": "Image generation client is not initialized"}), 500
+    
+    try:
+        data = request.json
+        prompt = data.get('prompt', '')
+        model = data.get('model', 'stable-diffusion-xl-1024-v1-0')
+        size = data.get('size', '1024x1024')
+        num_images = min(data.get('num_images', 1), 4)  # Limit to max 4 images
+        
+        if not prompt:
+            return jsonify({"error": "Empty prompt"}), 400
+        
+        # Generate the image
+        results = venice_image_client.generate_image(
+            prompt=prompt,
+            model=model,
+            size=size,
+            num_images=num_images
+        )
+        
+        # Return image URLs and metadata
+        return jsonify({
+            "success": True,
+            "images": results,
+            "model_used": model
+        })
+    except Exception as e:
+        logger.error(f"Error generating image: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+        
+@app.route('/api/image-models')
+def get_image_models():
+    """Return available image generation models"""
+    if venice_image_client is None:
+        return jsonify({"error": "Image generation client is not initialized"}), 500
+    
+    try:
+        models = venice_image_client.get_available_image_models()
+        return jsonify({"success": True, "models": models})
+    except Exception as e:
+        logger.error(f"Error fetching image models: {str(e)}")
+        return jsonify({"error": str(e)}), 500

@@ -66,6 +66,7 @@ class VeniceImageClient:
             "size": size
         }
         
+        response = None
         try:
             # Use images endpoint for Venice.ai API
             logger.info(f"Calling Venice API at: {self.base_url}/images/generations")
@@ -115,6 +116,7 @@ class VeniceImageClient:
         Returns:
             List of image model information
         """
+        response = None
         try:
             response = self.session.get(
                 f"{self.base_url}/models",
@@ -135,5 +137,8 @@ class VeniceImageClient:
             return models
             
         except Exception as e:
-            logger.error(f"Error fetching image models: {e}")
+            error_text = "No response text available"
+            if response is not None and hasattr(response, 'text'):
+                error_text = response.text
+            logger.error(f"Error fetching image models: {e}, response: {error_text}")
             return []
