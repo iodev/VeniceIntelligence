@@ -160,3 +160,40 @@ code {
     font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 0.875em;
 }
+
+/* Image generation styles */
+#imageResults .card {
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+#imageResults .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.3);
+}
+
+#imageResults .card img {
+    width: 100%;
+    height: auto;
+    transition: transform 0.5s ease;
+    object-fit: cover;
+}
+
+#imageResults .card:hover img {
+    transform: scale(1.05);
+}
+
+.image-prompt {
+    font-style: italic;
+    color: var(--bs-gray-500);
+    max-height: 3.6em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+#imageLoading {
+    min-height: 200px;
+}
