@@ -5,6 +5,7 @@ from flask import Flask, render_template, request, jsonify, session, redirect, u
 from agent.core import Agent
 from agent.memory import MemoryManager
 from agent.models import VeniceClient
+from agent.image import VeniceImageClient
 import config
 
 # Initialize Flask app
@@ -22,6 +23,12 @@ try:
         api_key=config.VENICE_API_KEY,
         openai_api_key=config.OPENAI_API_KEY
     )
+    
+    # Initialize the image generation client
+    venice_image_client = VeniceImageClient(
+        api_key=config.VENICE_API_KEY
+    )
+    
     memory_manager = MemoryManager(
         qdrant_url=config.QDRANT_URL,
         qdrant_api_key=config.QDRANT_API_KEY,
@@ -40,6 +47,7 @@ try:
 except Exception as e:
     logger.error(f"Failed to initialize agent: {str(e)}")
     agent = None
+    venice_image_client = None
 
 @app.route('/')
 def index():
