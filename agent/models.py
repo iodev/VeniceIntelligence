@@ -1,6 +1,6 @@
 import logging
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union, Iterator
 import requests
 import time
 import os
@@ -92,8 +92,9 @@ class VeniceClient:
         max_tokens: int = 500,
         temperature: float = 0.7,
         top_p: float = 0.9,
-        stop: Optional[List[str]] = None
-    ) -> str:
+        stop: Optional[List[str]] = None,
+        stream: bool = False
+    ) -> Union[str, Iterator[str]]:
         """
         Generate text using Venice.ai Chat API
         
