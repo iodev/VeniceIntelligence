@@ -68,6 +68,12 @@ class UsageCost(db.Model):
     cost = db.Column(Float, default=0.0)  # Cost in USD
     request_type = db.Column(String(20), default="chat")  # chat, embedding, image, etc.
     query_id = db.Column(String(100), nullable=True)  # To group related requests
+    agent_id = db.Column(String(100), nullable=True, index=True)  # Which agent used this model
+
+    # Token efficiency metrics
+    tokens_per_dollar_input = db.Column(Float, default=0.0)  # Input tokens per dollar
+    tokens_per_dollar_output = db.Column(Float, default=0.0)  # Output tokens per dollar
+    tokens_per_dollar_total = db.Column(Float, default=0.0)  # Total tokens per dollar
     
     @classmethod
     def calculate_cost(cls, model_id, provider, request_tokens, response_tokens):

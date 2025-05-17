@@ -123,7 +123,7 @@ class CostMonitor:
     def record_usage(self, model_id: str, provider: str, 
                      request_tokens: int, response_tokens: int,
                      request_type: str = "chat", latency: float = 0.0,
-                     query_id: Optional[str] = None) -> float:
+                     query_id: Optional[str] = None, agent_id: Optional[str] = None) -> float:
         """
         Record usage and cost for a model call
         
@@ -135,6 +135,7 @@ class CostMonitor:
             request_type: Type of request (chat, embedding, image)
             latency: Response latency in seconds
             query_id: Optional ID to group related requests
+            agent_id: Optional ID to identify which agent used this model
             
         Returns:
             Calculated cost in USD
@@ -146,6 +147,11 @@ class CostMonitor:
         # Calculate cost
         cost = UsageCost.calculate_cost(model_id, provider, request_tokens, response_tokens)
         
+        # Calculate token efficiency metrics
+        tokens_per_dollar_input = request_tokens / cost if cost > 0 else 0
+        tokens_per_dollar_output = response_tokens / cost if cost > 0 else 0
+        tokens_per_dollar_total = (request_tokens + response_tokens) / cost if cost > 0 else 0
+        
         # Create usage record
         usage = UsageCost(
             model_id=model_id,
@@ -155,7 +161,11 @@ class CostMonitor:
             total_tokens=request_tokens + response_tokens,
             cost=cost,
             request_type=request_type,
-            query_id=query_id
+            query_id=query_id,
+            agent_id=agent_id,
+            tokens_per_dollar_input=tokens_per_dollar_input,
+            tokens_per_dollar_output=tokens_per_dollar_output,
+            tokens_per_dollar_total=tokens_per_dollar_total
         )
         
         # Update strategy current spending
