@@ -3,6 +3,8 @@ import time
 from typing import Dict, List, Tuple, Optional, Any
 from agent.memory import MemoryManager
 from agent.models import VeniceClient
+from agent.perplexity import PerplexityClient
+from agent.anthropic_client import AnthropicClient
 from agent.evaluation import evaluate_model_response
 import config
 from datetime import datetime
@@ -73,10 +75,34 @@ class Agent:
         from main import db
         from agent.cost_control import CostMonitor
         
+        # Set up API clients
         self.venice_client = venice_client
         self.memory_manager = memory_manager
         self.available_models = available_models
         self.cost_monitor = CostMonitor()
+        
+        # Try to initialize additional API clients if keys are available
+        try:
+            self.perplexity_client = PerplexityClient()
+            if self.perplexity_client.api_key:
+                logger.info("Perplexity API client initialized successfully")
+            else:
+                self.perplexity_client = None
+                logger.warning("No Perplexity API key found, client not available")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Perplexity client: {str(e)}")
+            self.perplexity_client = None
+            
+        try:
+            self.anthropic_client = AnthropicClient()
+            if self.anthropic_client.api_key:
+                logger.info("Anthropic API client initialized successfully")
+            else:
+                self.anthropic_client = None
+                logger.warning("No Anthropic API key found, client not available")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Anthropic client: {str(e)}")
+            self.anthropic_client = None
         
         # Load or initialize models in database
         init_default_models()
@@ -151,19 +177,38 @@ class Agent:
                 model_to_use = self._get_best_model()
                 logger.info(f"Fallback to best model: {model_to_use}")
         
-        # Call the model
+        # Determine which provider to use based on the model
+        provider = self._get_provider_for_model(model_to_use)
+        
+        # Call the appropriate model based on provider
         start_time = time.time()
         try:
-            response = self.venice_client.generate(messages, model=model_to_use)
-            success = True
+            if provider == "venice":
+                response_data = self.venice_client.generate(messages, model=model_to_use)
+                response = response_data
+                success = True
+            elif provider == "anthropic" and hasattr(self, 'anthropic_client'):
+                response_data = self.anthropic_client.generate(messages, model=model_to_use)
+                response = response_data.get('content', [])[0].get('text', "")
+                success = True
+            elif provider == "perplexity" and hasattr(self, 'perplexity_client'):
+                response_data = self.perplexity_client.generate(messages, model=model_to_use)
+                response = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
+                success = True
+            else:
+                # Default to Venice client
+                response = self.venice_client.generate(messages, model=self.current_model)
+                model_to_use = self.current_model
+                success = True
         except Exception as e:
-            logger.error(f"Error generating response with model {model_to_use}: {str(e)}")
+            logger.error(f"Error generating response with {provider} model {model_to_use}: {str(e)}")
             # Fallback to default model if available
             if model_to_use != self.current_model:
                 try:
                     logger.info(f"Falling back to current model: {self.current_model}")
                     response = self.venice_client.generate(messages, model=self.current_model)
                     model_to_use = self.current_model
+                    provider = "venice"
                     success = True
                 except Exception as e2:
                     logger.error(f"Error with fallback model: {str(e2)}")
