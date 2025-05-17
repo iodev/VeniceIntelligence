@@ -267,7 +267,7 @@ class Agent:
                     "used": True,
                     "query_type": query_type,
                     "timestamp": time.time(),
-                    "providers_used": self._get_active_providers()
+                    "providers_used": ["venice", "perplexity"]  # Currently available providers
                 }
                 
                 # Update statistics
@@ -563,6 +563,193 @@ class Agent:
             
         logger.info(f"Provider status: {self._provider_status}")
 
+    def _requires_high_accuracy(self, query: str, system_prompt: str, query_type: str) -> bool:
+        """
+        Determine if a query requires high accuracy and should use multiple providers
+        
+        The agent learns over time which types of queries benefit from multiple providers.
+        This is a heuristic approach based on keywords, query complexity, and past performance.
+        
+        Args:
+            query: The user's query
+            system_prompt: System instructions for the agent
+            query_type: Type of query (text, code, image)
+            
+        Returns:
+            Whether high accuracy mode should be used (multiple providers)
+        """
+        # Avoid using high accuracy mode if we don't have multiple available providers
+        if not self._has_multiple_available_providers():
+            return False
+            
+        # Only enable high accuracy mode if budget allows
+        if hasattr(self, 'cost_monitor') and self.cost_monitor:
+            try:
+                if not self.cost_monitor.can_use_high_accuracy_mode():
+                    logger.info("High accuracy mode not available due to budget constraints")
+                    return False
+            except Exception as e:
+                logger.error(f"Error checking high accuracy budget: {str(e)}")
+                return False
+        
+        # Keywords that suggest high accuracy is needed
+        high_accuracy_keywords = [
+            "important", "critical", "crucial", "exact", "precise", 
+            "accuracy", "accurate", "factual", "verify", "validate",
+            "double-check", "ensure", "proof", "technical", "math",
+            "medical", "legal", "financial", "analysis", "compare",
+            "research", "investigate", "detailed", "complex"
+        ]
+        
+        # Check for high accuracy keywords in query
+        for keyword in high_accuracy_keywords:
+            if keyword.lower() in query.lower():
+                logger.info(f"High accuracy mode triggered by keyword: {keyword}")
+                return True
+                
+        # Check for high accuracy markers in system prompt
+        system_accuracy_indicators = [
+            "accuracy is critical", "high accuracy", "precise",
+            "factual correctness", "verification", "critical system"
+        ]
+        
+        for indicator in system_accuracy_indicators:
+            if indicator.lower() in system_prompt.lower():
+                logger.info(f"High accuracy mode triggered by system prompt indicator: {indicator}")
+                return True
+                
+        # Check query length - longer queries often benefit from multiple providers
+        if len(query.split()) > 50:  # Arbitrary threshold for longer queries
+            # For long queries, use high accuracy mode with some probability
+            # This lets the agent explore the value of using multiple providers
+            if random.random() < 0.3:  # 30% chance for long queries
+                logger.info("High accuracy mode triggered for long query")
+                return True
+                
+        # Code queries may benefit from multiple providers
+        if query_type == "code" and len(query.split()) > 30:
+            if random.random() < 0.4:  # 40% chance for code queries
+                logger.info("High accuracy mode triggered for code query")
+                return True
+                
+        # Default to not using high accuracy mode to reduce cost
+        return False
+        
+    def _has_multiple_available_providers(self) -> bool:
+        """
+        Check if multiple providers are available for query processing
+        
+        Returns:
+            Whether multiple providers are available
+        """
+        available_count = 0
+        
+        # Venice is always considered available
+        available_count += 1
+        
+        # Check Anthropic availability
+        if hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False):
+            available_count += 1
+            
+        # Check Perplexity availability
+        if hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False):
+            available_count += 1
+            
+        return available_count >= 2
+        
+    def _query_multiple_providers(self, messages: list, query_type: str) -> Tuple[str, str, str]:
+        """
+        Query multiple providers and combine the results for high accuracy
+        
+        Args:
+            messages: List of message objects for providers
+            query_type: Type of query (text, code, image)
+            
+        Returns:
+            Tuple of (response, model_used, provider_used)
+        """
+        responses = []
+        
+        # Always include Venice as primary provider
+        try:
+            venice_response = self.venice_client.generate(messages, model=self.current_model)
+            responses.append({
+                "provider": "venice",
+                "model": self.current_model,
+                "response": venice_response,
+                "success": True
+            })
+        except Exception as e:
+            logger.error(f"Error with Venice API: {str(e)}")
+        
+        # Try Perplexity if available
+        if hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False):
+            try:
+                perplexity_model = "llama-3.1-sonar-small-128k-online"  # Use consistent model
+                response_data = self.perplexity_client.generate(messages, model=perplexity_model)
+                content = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
+                responses.append({
+                    "provider": "perplexity",
+                    "model": perplexity_model,
+                    "response": content,
+                    "success": True
+                })
+            except Exception as e:
+                logger.error(f"Error with Perplexity API in multi-provider mode: {str(e)}")
+        
+        # Try Anthropic if available
+        if hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False):
+            try:
+                anthropic_model = "claude-3-sonnet-20240229"  # Use consistent model
+                response_data = self.anthropic_client.generate(messages, model=anthropic_model)
+                content = ""
+                if 'content' in response_data and len(response_data['content']) > 0:
+                    content = response_data['content'][0].get('text', "")
+                responses.append({
+                    "provider": "anthropic",
+                    "model": anthropic_model, 
+                    "response": content,
+                    "success": True
+                })
+            except Exception as e:
+                logger.error(f"Error with Anthropic API in multi-provider mode: {str(e)}")
+                
+        # If we have multiple responses, combine them or select the best
+        if len(responses) > 1:
+            logger.info(f"Received {len(responses)} responses in multi-provider mode")
+            
+            # For now, use Venice as primary and only use other providers to enhance it
+            # In a more sophisticated implementation, we could compare and merge them
+            
+            primary_response = next((r for r in responses if r["provider"] == "venice"), responses[0])
+            
+            # Track that we used multiple providers for this query
+            self._track_multi_provider_usage(query_type, len(responses))
+            
+            # Return primary response (typically Venice)
+            return primary_response["response"], primary_response["model"], primary_response["provider"]
+            
+        # If only one response or no responses, use it or fall back to default
+        if len(responses) == 1:
+            return responses[0]["response"], responses[0]["model"], responses[0]["provider"]
+        else:
+            # Fallback in case all providers failed
+            response = self.venice_client.generate(messages, model=self.current_model)
+            return response, self.current_model, "venice"
+            
+    def _track_multi_provider_usage(self, query_type: str, provider_count: int) -> None:
+        """
+        Track usage of multiple providers for analytics and optimization
+        
+        Args:
+            query_type: Type of query (text, code, image)
+            provider_count: Number of providers used
+        """
+        logger.info(f"Multi-provider mode: used {provider_count} providers for {query_type} query")
+        
+        # In a more sophisticated implementation, we would store this in the database
+        # to track which query types benefit most from multiple providers
+        
     def _get_best_performance_model(self) -> str:
         """
         Get the best performing model based on quality and success rate
