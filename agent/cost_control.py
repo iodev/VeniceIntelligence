@@ -383,6 +383,49 @@ class CostMonitor:
         best = candidates[0]
         return best["model_id"], best["provider"]
     
+    def can_use_high_accuracy_mode(self, query_complexity: float = 0.5) -> bool:
+        """
+        Determine if we can use high accuracy mode based on budget and query complexity
+        
+        High accuracy mode involves running multiple models in parallel for critical/complex queries
+        
+        Args:
+            query_complexity: Complexity score of the query (0-1)
+            
+        Returns:
+            Whether high accuracy mode can be used
+        """
+        # Load current strategy
+        if not self._current_strategy:
+            return False
+            
+        # Calculate current spending ratio
+        daily_budget = self._current_strategy.daily_budget
+        current_spending = self._current_strategy.current_spending
+        cost_threshold = self._current_strategy.cost_threshold
+        
+        spent_ratio = current_spending / daily_budget if daily_budget > 0 else 1.0
+        
+        # If we've spent over threshold percentage, don't use high accuracy mode
+        if spent_ratio > cost_threshold:
+            logger.info(f"Budget threshold exceeded ({spent_ratio:.2f}), disabling high accuracy mode")
+            return False
+            
+        # For very complex queries, allow high accuracy even with moderate budget constraints
+        if query_complexity > 0.8 and spent_ratio < 0.9:
+            return True
+            
+        # For moderately complex queries, be more conservative
+        if query_complexity > 0.5 and spent_ratio < 0.7:
+            return True
+            
+        # For simple queries, only use high accuracy if we have plenty of budget
+        if spent_ratio < 0.4:
+            return True
+            
+        # Default to conservative approach
+        return False
+        
     def update_model_accuracy(self, model_id: str, provider: str, 
                              task_type: str, accuracy_score: float):
         """
