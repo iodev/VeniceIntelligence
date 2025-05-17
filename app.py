@@ -305,15 +305,58 @@ def cost_monitor_page():
         flash("Cost monitoring is not initialized", "danger")
         return redirect(url_for('index'))
     
-    # Get cost summary and efficiency metrics
-    cost_summary = cost_monitor.get_cost_summary()
-    efficiency_metrics = cost_monitor.get_efficiency_metrics()
-    strategy = cost_monitor.get_current_strategy()
-    
-    return render_template('cost_monitor.html',
-                          cost_summary=cost_summary,
-                          efficiency_metrics=efficiency_metrics,
-                          strategy=strategy)
+    try:
+        # Get cost summary and efficiency metrics
+        cost_summary = cost_monitor.get_cost_summary()
+        efficiency_metrics = cost_monitor.get_efficiency_metrics()
+        strategy = cost_monitor.get_current_strategy()
+        
+        # Ensure cost_summary has all required fields with default values
+        if cost_summary is None:
+            cost_summary = {
+                'daily_spend': 0.0,
+                'daily_budget': 1.0,
+                'total_spend': 0.0,
+                'request_count': 0,
+                'provider_costs': {},
+                'request_type_costs': {}
+            }
+        else:
+            # Ensure all required fields exist
+            if 'daily_spend' not in cost_summary:
+                cost_summary['daily_spend'] = 0.0
+            if 'daily_budget' not in cost_summary:
+                cost_summary['daily_budget'] = 1.0
+            if 'total_spend' not in cost_summary:
+                cost_summary['total_spend'] = 0.0
+            if 'request_count' not in cost_summary:
+                cost_summary['request_count'] = 0
+            if 'provider_costs' not in cost_summary:
+                cost_summary['provider_costs'] = {}
+            if 'request_type_costs' not in cost_summary:
+                cost_summary['request_type_costs'] = {}
+        
+        # Ensure strategy has all required fields with default values
+        if strategy is None:
+            strategy = {
+                'name': 'Default Strategy',
+                'description': 'Balance between cost, speed, and accuracy',
+                'daily_budget': 1.0,
+                'prioritize_cost': 0.3,
+                'prioritize_speed': 0.3,
+                'prioritize_accuracy': 0.4,
+                'cost_threshold': 0.8,
+                'fallback_model': 'llama-3.2-3b'
+            }
+        
+        return render_template('cost_monitor.html',
+                              cost_summary=cost_summary,
+                              efficiency_metrics=efficiency_metrics if efficiency_metrics else [],
+                              strategy=strategy)
+    except Exception as e:
+        logger.error(f"Error rendering cost monitor page: {str(e)}")
+        flash(f"Error loading cost monitoring data: {str(e)}", "danger")
+        return redirect(url_for('index'))
 
 @app.route('/admin/update-budget', methods=['POST'])
 def update_budget():
