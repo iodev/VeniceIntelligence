@@ -58,18 +58,49 @@ class AnthropicClient:
             return False
             
         try:
-            # Simple query to test the connection with minimal tokens
+            # Make a minimal direct API call instead of using generate()
+            # This avoids recursive calls and better captures specific error types
+            url = f"{self.base_url}/messages"
             test_messages = [
                 {"role": "user", "content": "Hello, this is a test."}
             ]
             
-            response = self.generate(
-                messages=test_messages, 
-                model="claude-3.5-sonnet-20241022",
-                max_tokens=5
+            data = {
+                "model": "claude-3.5-sonnet-20241022",
+                "messages": test_messages,
+                "max_tokens": 5,
+                "temperature": 0.1
+            }
+            
+            headers = {
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                url, 
+                json=data, 
+                headers=headers,
+                timeout=5  # Short timeout for testing
             )
-            logger.info("Successfully connected to Anthropic API")
-            return True
+            
+            if response.status_code == 200:
+                logger.info("Successfully connected to Anthropic API")
+                return True
+            else:
+                error_text = response.text
+                logger.warning(f"Anthropic API test failed: {response.status_code}, {error_text}")
+                
+                # Check for specific error types
+                if "credit balance is too low" in error_text:
+                    logger.error("Anthropic API unavailable: Insufficient credit balance")
+                elif "rate limit" in error_text.lower():
+                    logger.error("Anthropic API unavailable: Rate limit exceeded")
+                elif "unauthorized" in error_text.lower() or response.status_code == 401:
+                    logger.error("Anthropic API unavailable: Authentication error")
+                
+                return False
         except Exception as e:
             logger.error(f"Error connecting to Anthropic API: {str(e)}")
             return False

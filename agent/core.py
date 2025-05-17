@@ -83,6 +83,26 @@ class Agent:
             "anthropic": False,  # Set to False by default until tested
             "perplexity": False  # Set to False by default until tested
         }
+        
+        # Track multi-provider usage statistics
+        # This allows us to learn when using multiple providers is beneficial
+        self._multi_provider_stats = {
+            "text": {
+                "total_uses": 0,
+                "positive_feedback": 0,
+                "negative_feedback": 0
+            },
+            "code": {
+                "total_uses": 0,
+                "positive_feedback": 0,
+                "negative_feedback": 0
+            },
+            "image": {
+                "total_uses": 0,
+                "positive_feedback": 0,
+                "negative_feedback": 0
+            }
+        }
         from models import ModelPerformance
         from main import db
         from agent.cost_control import CostMonitor
@@ -221,10 +241,20 @@ class Agent:
             provider = "venice"
             model_to_use = self.current_model
         
+        # Determine if this is a query that requires high accuracy
+        high_accuracy_required = self._requires_high_accuracy(query, system_prompt, query_type)
+        
         # Call the appropriate model based on provider
         start_time = time.time()
         try:
-            if provider == "venice":
+            # For high accuracy queries, potentially use multiple providers in parallel
+            if high_accuracy_required and self._has_multiple_available_providers():
+                logger.info("High accuracy query detected - using multiple providers in parallel")
+                
+                # Collect responses from multiple providers in parallel
+                response, model_to_use, provider = self._query_multiple_providers(messages, query_type)
+                success = True
+            elif provider == "venice":
                 # Always prioritize Venice API as it's the most reliable
                 response_data = self.venice_client.generate(messages, model=model_to_use)
                 response = response_data
