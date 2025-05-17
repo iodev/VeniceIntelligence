@@ -96,10 +96,12 @@ def chat():
         data = request.json
         query = data.get('query', '')
         system_prompt = data.get('system_prompt', 'You are a helpful AI assistant.')
+        query_type = data.get('query_type', 'text')  # Default to text if not specified
         stream = data.get('stream', False)
     else:  # GET method for EventSource
         query = request.args.get('query', '')
         system_prompt = request.args.get('system_prompt', 'You are a helpful AI assistant.')
+        query_type = request.args.get('query_type', 'text')  # Default to text if not specified
         stream = request.args.get('stream') == 'true'
     
     if not query:
@@ -107,22 +109,23 @@ def chat():
     
     try:
         if stream:
-            return stream_chat(query, system_prompt)
+            return stream_chat(query, system_prompt, query_type)
         else:
             # Get agent response (non-streaming)
-            response, model_used = agent.process_query(query, system_prompt)
+            response, model_used = agent.process_query(query, system_prompt, query_type)
             
             # Return the response with metadata
             return jsonify({
                 "response": response,
                 "model_used": model_used,
+                "query_type": query_type,
                 "success": True
             })
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-def stream_chat(query, system_prompt):
+def stream_chat(query, system_prompt, query_type="text"):
     """Stream chat responses to the client"""
     def generate():
         try:
@@ -137,8 +140,21 @@ def stream_chat(query, system_prompt):
             # Construct the prompt with context
             messages = agent._construct_prompt(query, system_prompt, context)
             
-            # Select a model (use the default for now)
-            model = agent.current_model  # Use current model instead of _get_best_model
+            # Select a model based on query type
+            task_type = "general"
+            if query_type == "code":
+                task_type = "code"
+            elif query_type == "image":
+                task_type = "image"
+                
+            # Get best model from cost control for specific task type
+            model_id, provider = agent.cost_monitor.select_model_for_task(
+                task_type=task_type, 
+                content_type=query_type
+            )
+            
+            # Default to current model if selection fails
+            model = model_id if model_id else agent.current_model
             
             # Start the generation with streaming
             stream_iterator = agent.venice_client.generate(

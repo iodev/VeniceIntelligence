@@ -38,6 +38,26 @@
                             </div>
                         </div>
                         
+                        <div class="mb-2">
+                            <div class="query-type-selector btn-group" role="group" aria-label="Query type">
+                                <input type="radio" class="btn-check" name="queryType" id="textQuery" value="text" checked>
+                                <label class="btn btn-outline-secondary" for="textQuery">
+                                    <i class="bi bi-chat-text"></i> Text
+                                </label>
+                                
+                                <input type="radio" class="btn-check" name="queryType" id="codeQuery" value="code">
+                                <label class="btn btn-outline-secondary" for="codeQuery">
+                                    <i class="bi bi-code-square"></i> Code
+                                </label>
+                                
+                                <input type="radio" class="btn-check" name="queryType" id="imageQuery" value="image">
+                                <label class="btn btn-outline-secondary" for="imageQuery">
+                                    <i class="bi bi-image"></i> Image
+                                </label>
+                            </div>
+                            <small class="text-muted ms-2">Select the type of your query</small>
+                        </div>
+                        
                         <div class="input-group">
                             <textarea id="userInput" class="form-control" placeholder="Type your message here..." rows="2"></textarea>
                             <button id="sendBtn" class="btn btn-primary">
@@ -221,6 +241,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const query = userInput.value.trim();
         if (!query) return;
         
+        // Get selected query type
+        const queryType = document.querySelector('input[name="queryType"]:checked').value;
+        
         // Add user message to chat
         addMessageToChat('user', query);
         
@@ -250,8 +273,8 @@ document.addEventListener('DOMContentLoaded', function() {
             
             chatHistory.scrollTop = chatHistory.scrollHeight;
             
-            // Connect to streaming endpoint
-            const eventSource = new EventSource(`/chat?stream=true&query=${encodeURIComponent(query)}&system_prompt=${encodeURIComponent(currentSystemPrompt)}`);
+            // Connect to streaming endpoint with query type
+            const eventSource = new EventSource(`/chat?stream=true&query=${encodeURIComponent(query)}&system_prompt=${encodeURIComponent(currentSystemPrompt)}&query_type=${encodeURIComponent(queryType)}`);
             
             let accumulatedResponse = '';
             let currentModel = '';
