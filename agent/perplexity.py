@@ -180,8 +180,34 @@ class PerplexityClient:
             response.raise_for_status()
             
             if stream:
-                # Handle streaming response (not implemented in this version)
-                raise NotImplementedError("Streaming not implemented yet")
+                # Return generator that yields chunks
+                def generate_stream_chunks():
+                    with response:
+                        for line in response.iter_lines():
+                            if not line:
+                                continue
+                            
+                            # Skip the "data: " prefix in SSE responses
+                            if line.startswith(b'data: '):
+                                line = line[6:]
+                                
+                            # Skip empty lines or [DONE] markers
+                            if line == b'[DONE]':
+                                continue
+                                
+                            try:
+                                chunk_data = json.loads(line)
+                                delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                if delta:
+                                    yield delta
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse streaming response line: {line}")
+                                continue
+                            except Exception as e:
+                                logger.warning(f"Error processing streaming response: {e}")
+                                continue
+                
+                return {"stream": generate_stream_chunks()}
             else:
                 # Return the full response data
                 result = response.json()

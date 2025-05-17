@@ -265,6 +265,39 @@ class VeniceClient:
             logger.error(f"Unexpected error in streaming: {str(e)}")
             raise
     
+    def generate_stream(
+        self, 
+        messages: list, 
+        model: str = "mistral-31-24b",
+        max_tokens: int = 500,
+        temperature: float = 0.7,
+        top_p: float = 0.9,
+        stop: Optional[List[str]] = None
+    ) -> Iterator[str]:
+        """
+        Generate text using Venice.ai Chat API with streaming support
+        
+        Args:
+            messages: List of message objects (system, user, etc.)
+            model: Model ID to use
+            max_tokens: Maximum number of tokens to generate
+            temperature: Sampling temperature (0-1)
+            top_p: Top-p sampling parameter
+            stop: Optional list of stop sequences
+            
+        Returns:
+            Iterator yielding chunks of generated text
+        """
+        # Use the internal streaming method
+        return self._generate_streaming(
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            stop=stop
+        )
+        
     def get_embedding(
         self, 
         text: str, 

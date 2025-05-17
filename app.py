@@ -299,7 +299,7 @@ def reset_memory():
         return jsonify({"error": "Agent is not initialized"}), 500
     
     try:
-        agent.memory_manager.clear_memory()
+        agent.memory_manager.clear_memories()
         return jsonify({"success": True, "message": "Memory reset successfully"})
     except Exception as e:
         logger.error(f"Error resetting memory: {str(e)}")

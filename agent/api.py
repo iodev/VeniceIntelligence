@@ -297,6 +297,49 @@ class AgentAPI:
                 system_prompt = "You are a helpful AI assistant."
                 
             # Process query using the agent
+            if stream:
+                # For streaming, we need to get the direct stream from the provider
+                if hasattr(self.agent, 'venice_client') and self.agent.venice_client:
+                    try:
+                        # Prepare context and messages similar to agent's process_query
+                        relevant_memories = self.agent.memory_manager.get_relevant_memories(query, limit=5)
+                        context = self.agent._create_context_from_memories(relevant_memories)
+                        messages = self.agent._construct_prompt(query, system_prompt, context)
+                        
+                        # Get the model to use - simplified version of what the agent does
+                        model_to_use = model_id if model_id else self.agent.current_model
+                        
+                        # Create streaming response
+                        streaming_response = self.agent.venice_client.generate_stream(
+                            messages=messages,
+                            model=model_to_use
+                        )
+                        
+                        # Store interaction once we're done with streaming
+                        self.agent.memory_manager.store_interaction(
+                            query=query,
+                            response="[Streaming response]",  # Placeholder
+                            system_prompt=system_prompt
+                        )
+                        
+                        # Return with stream
+                        return {
+                            "status": "success",
+                            "response_stream": streaming_response,
+                            "model_used": model_to_use,
+                            "query_type": query_type,
+                            "query_id": query_id,
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "agent_id": agent_id
+                        }
+                    except Exception as e:
+                        logger.error(f"Error setting up stream: {str(e)}")
+                        # Fall back to non-streaming
+                
+                # If streaming setup failed or isn't available, fall back to normal processing
+                logger.warning("Streaming requested but not available, falling back to normal processing")
+                        
+            # Standard non-streaming processing
             response_text, model_used = self.agent.process_query(
                 query, 
                 system_prompt, 
