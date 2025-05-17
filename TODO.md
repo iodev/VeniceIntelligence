@@ -3,13 +3,41 @@
 ## Critical Fixes
 - Fix `'Agent' object has no attribute 'model_performance'` error in the agent core module
 - Modify agent to properly track model performance metrics
+- Fix naming inconsistency in memory management: app.py calls `clear_memory()` but MemoryManager implements `clear_memories()`
+- Fix undeclared/undefined `cost_monitor` reference in app.py's update_strategy route (line 522)
+
+## Method Implementation Issues (By Folder)
+### agent/api.py
+- Fix LSP error for ModelPerformance constructor in register_model method (lines 70-77)
+- Fix incorrect UsageCost constructor call (lines 699-707)
+
+### agent/core.py
+- Fix LSP error for ModelPerformance constructor in init_default_models (lines 39-47)
+- Fix LSP error for ModelPerformance constructor in _record_query method (lines 851-859)
+- Implement streaming response handler for non-Venice providers
+
+### agent/cost_control.py
+- Fix constructor calls for CostControlStrategy, UsageCost, and ModelEfficiency
+- Fix reference errors to prioritize_cost, prioritize_speed, and prioritize_accuracy attributes (lines 335-337)
+- Implement missing can_use_high_accuracy_mode method or properly reference it if defined elsewhere
+
+### agent/memory.py
+- Fix QdrantClient dependency issues (possibly unbound error)
+- Resolve type errors in search response handling for Qdrant results (line 215)
+- Fix Payload type incompatibility with Dict[str, Any] return type
+
+### agent/perplexity.py
+- Standardize stream response handling with other clients
+
+### agent/models.py
+- Ensure streaming implementation is working correctly with error handling (warning seen in logs)
 
 ## Enhancements to Complete
 - Complete the integration of dynamic model discovery between Perplexity and Anthropic
-- Add `clear_memories` method to `MemoryManager` class
 - Add utility to randomly select models for testing/evaluation
 - Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance)
 - Implement proper fallback mechanisms when primary model fails
+- Standardize streaming response format across all providers
 
 ## Suggested Enhancements
 - Add parallel query execution for high-accuracy mode
@@ -17,3 +45,18 @@
 - Create a model registry system that tracks all available models across providers
 - Add performance metrics dashboard for comparing model efficiency
 - Implement automatic deprecation of underperforming models
+
+## Folders/Files Reviewed
+- ✓ agent/api.py
+- ✓ agent/core.py
+- ✓ agent/cost_control.py
+- ✓ agent/evaluation.py
+- ✓ agent/huggingface_client.py
+- ✓ agent/memory.py
+- ✓ agent/models.py
+- ✓ agent/anthropic_client.py
+- ✓ agent/perplexity.py
+- ✓ agent/image.py
+- ✓ app.py
+- ✓ main.py
+- ✓ models.py
