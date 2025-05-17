@@ -148,18 +148,33 @@ def stream_chat(query, system_prompt):
             # First, yield the starting JSON
             yield 'data: {"model_used": "%s", "success": true, "type": "start"}\n\n' % model
             
+            # Collect the full response for storing in memory
+            full_response = ""
+            
             # Stream each chunk
             for chunk in stream_iterator:
+                # Add chunk to full response
+                full_response += chunk
                 yield f'data: {{"chunk": {json.dumps(chunk)}, "type": "chunk"}}\n\n'
                 
-            # Final message
-            # Store the interaction in memory asynchronously after sending response
-            response_text = "Response saved to memory"  # Placeholder for stored response
-            agent.memory_manager.store_interaction(query, response_text, system_prompt)
+            # Record usage cost if cost_monitor is available
+            if cost_monitor is not None:
+                # Estimate token counts for simplicity
+                request_tokens = len(query) // 4  # rough estimate of tokens
+                response_tokens = len(full_response) // 4
+                
+                # Record usage
+                cost_monitor.record_usage(
+                    model_id=model,
+                    provider="venice",
+                    request_tokens=request_tokens,
+                    response_tokens=response_tokens,
+                    request_type="chat",
+                    latency=1.0  # placeholder
+                )
             
-            # Update model performance asynchronously
-            # For now we'll assume it was successful
-            agent._update_model_performance(model, True, 1.0)  # Success, 1.0 second latency (placeholder)
+            # Store the interaction in memory
+            agent.memory_manager.store_interaction(query, full_response, system_prompt)
             
             # End stream
             yield 'data: {"type": "end"}\n\n'
