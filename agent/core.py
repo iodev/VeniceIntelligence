@@ -61,7 +61,8 @@ class Agent:
         venice_client: VeniceClient,
         memory_manager: MemoryManager,
         available_models: List[str],
-        default_model: str
+        default_model: str,
+        default_system_prompt: str = "You are a helpful AI assistant."
     ):
         """
         Initialize the agent with the Venice API client and memory manager
@@ -71,7 +72,10 @@ class Agent:
             memory_manager: Memory manager with Qdrant integration
             available_models: List of available Venice.ai models to use
             default_model: Default model to start with
+            default_system_prompt: Default system prompt to use when none is provided
         """
+        # Set the default system prompt
+        self.default_system_prompt = default_system_prompt
         from models import ModelPerformance
         from main import db
         from agent.cost_control import CostMonitor
@@ -125,18 +129,24 @@ class Agent:
         self.interaction_count = 0
         logger.info(f"Agent initialized with current model: {self.current_model}")
     
-    def process_query(self, query: str, system_prompt: str, query_type: str = "text") -> Tuple[str, str]:
+    def process_query(self, query: str, system_prompt: Optional[str] = None, query_type: str = "text") -> Tuple[str, str]:
         """
         Process a user query and return the response using the most appropriate model.
         
         Args:
             query: The user's query
-            system_prompt: System prompt describing the agent's purpose
+            system_prompt: Optional system prompt describing the agent's purpose.
+                           If None, the default_system_prompt will be used.
             query_type: Type of query (text, code, image)
             
         Returns:
             Tuple of (response text, model used)
         """
+        # Use default system prompt if none is provided
+        if system_prompt is None:
+            system_prompt = self.default_system_prompt
+            logger.debug(f"Using default system prompt: {system_prompt[:50]}...")
+            
         self.interaction_count += 1
         
         # Get relevant memories based on the query

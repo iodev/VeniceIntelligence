@@ -324,30 +324,86 @@ class AgentAPI:
                 "agent_id": agent_id
             }
     
-    def update_system_prompt(self, system_prompt: str) -> Dict[str, Any]:
+    def update_system_prompt(self, system_prompt: str, parent_node_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Update the default system prompt for the agent
         This allows parent nodes to modify agent behavior
 
         Args:
             system_prompt: New system prompt
+            parent_node_id: Optional ID of the parent node making the request
 
         Returns:
             Status dictionary
         """
         try:
-            # In a more complex implementation, this would update the agent's 
-            # configuration in a database or other persistent storage
-            return {
-                "status": "success",
-                "message": "System prompt updated successfully"
-            }
+            if not system_prompt:
+                return {
+                    "status": "error",
+                    "error": "System prompt cannot be empty"
+                }
+                
+            # Log the request from the parent node
+            if parent_node_id:
+                logger.info(f"System prompt update requested by parent node: {parent_node_id}")
+            
+            # Update the agent's system prompt
+            if hasattr(self.agent, 'default_system_prompt'):
+                # Store the previous prompt for potential rollback
+                previous_prompt = self.agent.default_system_prompt
+                
+                # Update the prompt
+                self.agent.default_system_prompt = system_prompt
+                logger.info(f"Default system prompt updated to: {system_prompt[:50]}...")
+                
+                # Save the prompt to database for persistence
+                self._save_system_prompt_to_db(system_prompt, parent_node_id)
+                
+                return {
+                    "status": "success",
+                    "message": "System prompt updated successfully",
+                    "previous_prompt": previous_prompt
+                }
+            else:
+                return {
+                    "status": "error",
+                    "error": "Agent does not support default system prompt updates"
+                }
         except Exception as e:
             logger.error(f"Error updating system prompt: {str(e)}")
             return {
                 "status": "error",
                 "error": str(e)
             }
+    
+    def _save_system_prompt_to_db(self, system_prompt: str, parent_node_id: Optional[str] = None) -> None:
+        """
+        Save the system prompt to the database for persistence
+        
+        Args:
+            system_prompt: The system prompt to save
+            parent_node_id: Optional ID of the parent node that requested the update
+        """
+        try:
+            # In a production implementation, this would store the prompt in a
+            # database table specifically for system prompts with versioning
+            
+            # For now, we'll just log it to show the functionality
+            logger.info(f"System prompt saved to persistence layer. Parent: {parent_node_id or 'none'}")
+            
+            # You could implement a real database storage like:
+            # from models import SystemPrompt
+            # prompt = SystemPrompt(
+            #     prompt_text=system_prompt,
+            #     parent_node_id=parent_node_id,
+            #     is_active=True
+            # )
+            # db.session.add(prompt)
+            # db.session.commit()
+            
+        except Exception as e:
+            logger.error(f"Error saving system prompt to database: {str(e)}")
+            # Don't raise the exception, just log it
     
     def get_available_models(self) -> Dict[str, Any]:
         """

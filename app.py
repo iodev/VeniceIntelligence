@@ -189,7 +189,7 @@ def get_models():
 
 @app.route('/api/set_system_prompt', methods=['POST'])
 def set_system_prompt():
-    """Set a new system prompt for the agent"""
+    """Set a new system prompt for the agent (for UI use)"""
     if agent is None:
         return jsonify({"error": "Agent is not initialized"}), 500
     
@@ -201,6 +201,45 @@ def set_system_prompt():
     
     session['system_prompt'] = system_prompt
     return jsonify({"success": True})
+    
+@app.route('/api/node/update_system_prompt', methods=['POST'])
+def node_update_system_prompt():
+    """
+    Endpoint for parent nodes to update the system prompt
+    This allows external systems to modify the agent's behavior
+    """
+    if agent_api is None:
+        return jsonify({"error": "Agent API is not initialized"}), 500
+    
+    try:
+        data = request.json
+        system_prompt = data.get('system_prompt', '')
+        parent_node_id = data.get('parent_node_id')
+        
+        if not system_prompt:
+            return jsonify({"error": "Empty system prompt"}), 400
+            
+        # Use the agent API to update the system prompt
+        result = agent_api.update_system_prompt(system_prompt, parent_node_id)
+        
+        if result.get('status') == 'success':
+            return jsonify({
+                "success": True,
+                "message": "System prompt updated successfully",
+                "previous_prompt": result.get('previous_prompt')
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Unknown error')
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error updating system prompt from node: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 @app.route('/history')
 def history():
