@@ -354,3 +354,209 @@ class AgentAPI:
                 "status": "error",
                 "error": str(e)
             }
+    def register_external_node(self, node_id: str, node_info: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Register an external node or agent system that can communicate with this agent
+        
+        Args:
+            node_id: Unique identifier for the external node
+            node_info: Information about the node (capabilities, etc.)
+            
+        Returns:
+            Status dictionary with access details
+        """
+        try:
+            # Generate an access token for this node
+            # In a real implementation, this would use proper auth mechanisms
+            access_token = str(uuid.uuid4())
+            
+            # Here we would store the node information in a database
+            # For now, we'll just log it
+            logger.info(f"Registered external node: {node_id}")
+            
+            return {
+                "status": "success",
+                "message": f"Successfully registered node {node_id}",
+                "access_token": access_token,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error registering external node: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+    
+    def handle_perplexity_query(self, 
+                       messages: List[Dict[str, str]], 
+                       model: str = "llama-3.1-sonar-small-128k-online",
+                       max_tokens: Optional[int] = None,
+                       **kwargs) -> Dict[str, Any]:
+        """
+        Process a query specifically for the Perplexity API
+        
+        Args:
+            messages: List of message objects (as required by Perplexity API)
+            model: Model ID to use
+            max_tokens: Maximum number of tokens to generate
+            kwargs: Additional parameters for the Perplexity API
+            
+        Returns:
+            Dictionary with response and metadata
+        """
+        try:
+            # Check if Perplexity client is available
+            if not hasattr(self.agent, 'perplexity_client') or not self.agent.perplexity_client:
+                logger.warning("Perplexity client not available, trying to initialize it")
+                try:
+                    # Try to initialize on-demand if we have the key in environment
+                    from agent.perplexity import PerplexityClient
+                    self.agent.perplexity_client = PerplexityClient()
+                    
+                    # Register this provider's models with our model manager
+                    perplexity_models = self.agent.perplexity_client.get_available_models()
+                    for model_info in perplexity_models:
+                        self.model_manager.register_model(
+                            provider="perplexity",
+                            model_id=model_info["id"],
+                            model_info=model_info
+                        )
+                except Exception as init_error:
+                    return {
+                        "status": "error",
+                        "error": f"Perplexity client not available and could not be initialized: {str(init_error)}",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+            
+            # Make sure we have a valid Perplexity API key
+            if not self.agent.perplexity_client.api_key:
+                return {
+                    "status": "error",
+                    "error": "Perplexity API key not configured",
+                    "message": "Please make sure a valid PERPLEXITY_API_KEY environment variable is set",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+            # Send request to Perplexity API
+            result = self.agent.perplexity_client.generate(
+                messages=messages,
+                model=model,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+            
+            # Track this usage in our system (using a unique query ID)
+            query_id = str(uuid.uuid4())
+            logger.info(f"Processed Perplexity query {query_id} with model {model}")
+            
+            try:
+                # Log usage to the database
+                from models import UsageCost
+                from main import db
+                
+                # Extract tokens from response if available
+                request_tokens = 0
+                response_tokens = 0
+                if "usage" in result:
+                    request_tokens = result["usage"].get("prompt_tokens", 0)
+                    response_tokens = result["usage"].get("completion_tokens", 0)
+                
+                # Create usage cost record
+                usage = UsageCost(
+                    model_id=model,
+                    provider="perplexity",
+                    request_tokens=request_tokens,
+                    response_tokens=response_tokens,
+                    total_tokens=request_tokens + response_tokens,
+                    query_id=query_id,
+                    request_type="chat"
+                )
+                db.session.add(usage)
+                db.session.commit()
+            except Exception as log_error:
+                logger.error(f"Error logging usage: {str(log_error)}")
+            
+            return {
+                "status": "success",
+                "response": result,
+                "model_used": model,
+                "timestamp": datetime.utcnow().isoformat(),
+                "query_id": query_id
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing Perplexity query: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+    
+    def handle_anthropic_query(self, 
+                        messages: List[Dict[str, str]], 
+                        model: str = "claude-3.5-sonnet-20241022",
+                        max_tokens: int = 1024,
+                        **kwargs) -> Dict[str, Any]:
+        """
+        Process a query specifically for the Anthropic API
+        
+        Args:
+            messages: List of message objects (as required by Anthropic API)
+            model: Model ID to use
+            max_tokens: Maximum number of tokens to generate
+            kwargs: Additional parameters for the Anthropic API
+            
+        Returns:
+            Dictionary with response and metadata
+        """
+        try:
+            # Check if Anthropic client is available
+            if not hasattr(self.agent, 'anthropic_client') or not self.agent.anthropic_client:
+                logger.warning("Anthropic client not available, trying to initialize it")
+                try:
+                    # Try to initialize on-demand if we have the key in environment
+                    from agent.anthropic_client import AnthropicClient
+                    self.agent.anthropic_client = AnthropicClient()
+                except Exception as init_error:
+                    return {
+                        "status": "error",
+                        "error": f"Anthropic client not available and could not be initialized: {str(init_error)}",
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+            
+            # Make sure we have a valid Anthropic API key
+            if not self.agent.anthropic_client.api_key:
+                return {
+                    "status": "error",
+                    "error": "Anthropic API key not configured",
+                    "message": "Please make sure a valid ANTHROPIC_API_KEY environment variable is set",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+            # Send request to Anthropic API
+            result = self.agent.anthropic_client.generate(
+                messages=messages,
+                model=model,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+            
+            # Track this usage in our system
+            # In a real implementation, this would log to a database
+            logger.info(f"Processed Anthropic query with model {model}")
+            
+            return {
+                "status": "success",
+                "response": result,
+                "model_used": model,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error processing Anthropic query: {str(e)}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }

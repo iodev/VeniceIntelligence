@@ -140,80 +140,41 @@ def stream_chat(query, system_prompt, query_type="text"):
     """Stream chat responses to the client"""
     def generate():
         try:
-            if agent is None:
-                yield 'data: {"error": "Agent is not initialized", "type": "error"}\n\n'
+            if agent_api is None:
+                yield 'data: {"error": "Agent API is not initialized", "type": "error"}\n\n'
                 return
                 
-            # First, get the relevant context from memory
-            memories = agent.memory_manager.get_relevant_memories(query)
-            context = agent._create_context_from_memories(memories)
-            
-            # Construct the prompt with context
-            messages = agent._construct_prompt(query, system_prompt, context)
-            
-            # Select a model based on query type
-            task_type = "general"
-            if query_type == "code":
-                task_type = "code"
-            elif query_type == "image":
-                task_type = "image"
-                
-            # Get best model from cost control for specific task type
-            model_id, provider = agent.cost_monitor.select_model_for_task(
-                task_type=task_type, 
-                content_type=query_type
-            )
-            
-            # Default to current model if selection fails
-            model = model_id if model_id else agent.current_model
-            
-            # Start the generation with streaming
-            stream_iterator = agent.venice_client.generate(
-                messages=messages,
-                model=model,
-                max_tokens=500,
-                temperature=0.7,
+            # Request streaming response from the API layer
+            # This abstracts away the details of memory, model selection, etc.
+            result = agent_api.process_query(
+                query=query,
+                system_prompt=system_prompt,
+                query_type=query_type,
                 stream=True
             )
             
-            # First, yield the starting JSON
-            yield 'data: {"model_used": "%s", "success": true, "type": "start"}\n\n' % model
-            
-            # Collect the full response for storing in memory
-            full_response = ""
-            
-            # Stream each chunk
-            for chunk in stream_iterator:
-                # Add chunk to full response
-                full_response += chunk
-                yield f'data: {{"chunk": {json.dumps(chunk)}, "type": "chunk"}}\n\n'
+            if result.get('status') != 'success':
+                yield f'data: {{"error": "{result.get("error", "Unknown error")}", "type": "error"}}\n\n'
+                return
                 
-            # Record usage cost if cost_monitor is available
-            if cost_monitor is not None:
-                # Estimate token counts for simplicity
-                request_tokens = len(query) // 4  # rough estimate of tokens
-                response_tokens = len(full_response) // 4
+            # Get the response stream from the result
+            response_stream = result.get('response_stream')
+            
+            if not response_stream:
+                yield f'data: {{"error": "No response stream available", "type": "error"}}\n\n'
+                return
                 
-                # Record usage
-                cost_monitor.record_usage(
-                    model_id=model,
-                    provider="venice",
-                    request_tokens=request_tokens,
-                    response_tokens=response_tokens,
-                    request_type="chat",
-                    latency=1.0  # placeholder
-                )
-            
-            # Store the interaction in memory
-            agent.memory_manager.store_interaction(query, full_response, system_prompt)
-            
-            # End stream
-            yield 'data: {"type": "end"}\n\n'
-            
+            # Stream the response chunks to the client
+            for chunk in response_stream:
+                if not chunk:
+                    continue
+                yield f'data: {{"chunk": "{chunk}", "type": "token"}}\n\n'
+                
+            # Signal that we're done
+            yield 'data: {"done": true, "type": "done"}\n\n'
         except Exception as e:
-            logger.error(f"Error in streaming: {str(e)}")
-            error_msg = str(e).replace('"', '\\"')
-            yield f'data: {{"error": "{error_msg}", "type": "error"}}\n\n'
+            logger.error(f"Error streaming chat: {str(e)}")
+            yield f'data: {{"error": "{str(e)}", "type": "error"}}\n\n'
     
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
