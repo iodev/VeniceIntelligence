@@ -271,3 +271,105 @@ def get_image_models():
     except Exception as e:
         logger.error(f"Error fetching image models: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/admin')
+def admin():
+    """Admin page with model information across platforms"""
+    # Check API availabilities
+    api_status = {
+        "venice": False,
+        "perplexity": False,
+        "anthropic": False,
+        "qdrant": False
+    }
+    
+    api_keys = {
+        "venice": bool(config.VENICE_API_KEY),
+        "perplexity": bool(config.PERPLEXITY_API_KEY),
+        "anthropic": bool(config.ANTHROPIC_API_KEY),
+        "qdrant": bool(config.QDRANT_URL and config.QDRANT_API_KEY)
+    }
+    
+    # Initialize clients as needed
+    perplexity_client = None
+    anthropic_client = None
+    
+    # Check Venice API status
+    if venice_client:
+        try:
+            # Simple test call
+            api_status["venice"] = venice_client.test_connection()
+        except Exception as e:
+            logger.error(f"Error testing Venice API: {str(e)}")
+    
+    # Check Perplexity API status if key is available
+    if api_keys["perplexity"]:
+        try:
+            perplexity_client = PerplexityClient()
+            api_status["perplexity"] = perplexity_client.test_connection()
+        except Exception as e:
+            logger.error(f"Error testing Perplexity API: {str(e)}")
+    
+    # Check Anthropic API status if key is available
+    if api_keys["anthropic"]:
+        try:
+            anthropic_client = AnthropicClient()
+            api_status["anthropic"] = anthropic_client.test_connection()
+        except Exception as e:
+            logger.error(f"Error testing Anthropic API: {str(e)}")
+    
+    # Check Qdrant status
+    if agent and agent.memory_manager:
+        api_status["qdrant"] = True
+    
+    # Fetch model information from each platform
+    venice_models = []
+    perplexity_models = []
+    anthropic_models = []
+    model_performance = []
+    
+    # Fetch Venice.ai models
+    if api_status["venice"]:
+        try:
+            venice_models = venice_client.get_available_models()
+        except Exception as e:
+            logger.error(f"Error fetching Venice models: {str(e)}")
+    
+    # Fetch Perplexity models
+    if api_status["perplexity"] and perplexity_client:
+        try:
+            perplexity_models = perplexity_client.get_available_models()
+        except Exception as e:
+            logger.error(f"Error fetching Perplexity models: {str(e)}")
+    
+    # Fetch Anthropic models
+    if api_status["anthropic"] and anthropic_client:
+        try:
+            anthropic_models = anthropic_client.get_available_models()
+        except Exception as e:
+            logger.error(f"Error fetching Anthropic models: {str(e)}")
+    
+    # Get model performance metrics from database
+    try:
+        model_performance = ModelPerformance.query.all()
+    except Exception as e:
+        logger.error(f"Error fetching model performance: {str(e)}")
+    
+    # Get dynamic routing strategy settings
+    # For now, use default values
+    strategy = {
+        "code_model": "mistral-31-24b",
+        "text_model": "llama-3.1-sonar-small-128k-online",
+        "image_model": "stable-diffusion-xl-1024-v1-0",
+        "use_dynamic_routing": True,
+        "use_collaboration": False
+    }
+    
+    return render_template('admin.html',
+                           api_status=api_status,
+                           api_keys=api_keys,
+                           venice_models=venice_models,
+                           perplexity_models=perplexity_models,
+                           anthropic_models=anthropic_models,
+                           model_performance=model_performance,
+                           strategy=strategy)
