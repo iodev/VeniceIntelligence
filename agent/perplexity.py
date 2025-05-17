@@ -252,3 +252,83 @@ class PerplexityClient:
         # Very simple approximation - in production would use a proper tokenizer
         words = text.split()
         return len(words) * 4 // 3  # ~1.33 tokens per word on average
+        
+    def fetch_current_anthropic_models(self) -> List[Dict[str, Any]]:
+        """
+        Use Perplexity's web access to find current Anthropic models
+        
+        This is used when we encounter model name errors with Anthropic,
+        allowing our system to self-heal and update model lists dynamically.
+        
+        Returns:
+            List of current Anthropic models with their details
+        """
+        logger.info("Using Perplexity to fetch current Anthropic model information")
+        
+        try:
+            # Craft a specific query to get current Claude model information
+            query = """
+            Please provide the complete and accurate list of all currently available Claude AI models from Anthropic that can be used with their API (as of today).
+            For each model, include:
+            1. The exact API model identifier string used in API calls (e.g., "claude-3-5-sonnet-20241022")
+            2. The human-readable name (e.g., "Claude 3.5 Sonnet")
+            3. The context window size in tokens
+            
+            Format your response as a clean JSON array of objects with the following keys exactly:
+            - "id": the API model identifier
+            - "name": the human-readable name
+            - "context_window": the context window size (as an integer)
+            
+            Only include Claude models that are actually available for API use today. Ensure all model names are correctly formatted with hyphens and dates exactly as used in the API.
+            """
+            
+            # Build system message that emphasizes factual correctness
+            system_message = "You are an AI assistant tasked with providing only factual, accurate, and up-to-date information about Anthropic's Claude AI models. Always format model IDs exactly as they appear in Anthropic's API documentation. Your response must be in valid JSON format only."
+            
+            response = self.generate(
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": query}
+                ],
+                model="llama-3.1-sonar-small-128k-online",  # Using Sonar for web search capabilities
+                temperature=0.1,  # Low temperature for factual response
+                search_domain_filter=["anthropic.com", "docs.anthropic.com"],  # Focus on Anthropic docs
+                search_recency_filter="day"  # Ensure we get recent information
+            )
+            
+            # Extract the model information from the response
+            content = response.get('choices', [{}])[0].get('message', {}).get('content', "")
+            
+            # Parse JSON from the content - need to extract JSON from potential text
+            import re
+            json_match = re.search(r'(\[\s*\{.*\}\s*\])', content, re.DOTALL)
+            
+            if json_match:
+                json_str = json_match.group(1)
+                models_data = json.loads(json_str)
+                
+                # Add provider information
+                for model in models_data:
+                    model["provider"] = "anthropic"
+                    
+                logger.info(f"Successfully retrieved {len(models_data)} Anthropic models from Perplexity")
+                return models_data
+            else:
+                # Try to parse the whole response as JSON if no match found
+                try:
+                    models_data = json.loads(content)
+                    if isinstance(models_data, list):
+                        # Add provider information
+                        for model in models_data:
+                            model["provider"] = "anthropic"
+                        
+                        logger.info(f"Successfully retrieved {len(models_data)} Anthropic models from Perplexity")
+                        return models_data
+                except:
+                    logger.error("Failed to parse JSON from Perplexity response")
+                    logger.debug(f"Raw content: {content}")
+                    return []
+                    
+        except Exception as e:
+            logger.error(f"Error fetching Anthropic models from Perplexity: {str(e)}")
+            return []
