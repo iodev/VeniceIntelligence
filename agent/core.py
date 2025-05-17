@@ -221,50 +221,141 @@ class Agent:
     
     def _select_model_for_evaluation(self) -> str:
         """
-        Select a model for evaluation using a round-robin approach
+        Select a model for evaluation using an adaptive approach:
+        1. Round-robin for unevaluated models (priority)
+        2. Gradually back off to criteria-based selection as models get evaluated
         
-        This ensures all models get evaluated fairly over time, with
-        priority given to models with fewer evaluations.
+        This ensures all models get evaluated fairly at the beginning,
+        but transitions to a smarter selection strategy over time.
         
         Returns:
             Model ID to evaluate
         """
         from models import ModelPerformance
         from app import db
+        import random
+        import math
         
-        # Get all models with their total calls from the database
-        model_calls = {}
+        # Get all models with their evaluation counts from the database
+        model_evaluations = {}
         
         # Check the database for model performance records
         models = ModelPerformance.query.all()
         for model in models:
-            model_calls[model.model_id] = model.total_calls
+            model_evaluations[model.model_id] = {
+                'total_calls': model.total_calls,
+                'quality_evaluations': model.quality_evaluations if hasattr(model, 'quality_evaluations') else 0
+            }
         
-        # Add any available models that aren't in the database yet
-        for model_id in self.available_models:
-            if model_id not in model_calls:
-                model_calls[model_id] = 0
+        # Find unevaluated models (these get priority)
+        unevaluated_models = []
+        for model_name in self.available_models:
+            if model_name not in model_evaluations:
+                unevaluated_models.append(model_name)
+            elif model_evaluations[model_name]['quality_evaluations'] == 0:
+                unevaluated_models.append(model_name)
         
-        # Sort models by call count (ascending)
-        sorted_models = sorted(model_calls.items(), key=lambda x: x[1])
+        # If there are unevaluated models, use round-robin on them
+        if unevaluated_models:
+            logger.info(f"Round-robin mode: selecting unevaluated model from {unevaluated_models}")
+            candidates = [m for m in unevaluated_models if m != self.current_model]
+            if candidates:
+                return candidates[0]  # Return first unevaluated model
         
-        # Filter out the current model to avoid evaluating it
-        candidates = [model for model, _ in sorted_models if model != self.current_model]
+        # All models have some evaluation - use a weighted probability approach
+        # that gradually transitions from round-robin to criteria-based selection
         
-        # If there are candidates, return the one with the fewest calls
+        # Calculate the minimum evaluation count needed for full criteria-based selection
+        # (We'll use 10 evaluations as a threshold for considering a model fully evaluated)
+        FULL_EVALUATION_THRESHOLD = 10
+        
+        # Calculate average evaluation count 
+        eval_counts = [
+            model_evaluations.get(model_id, {}).get('quality_evaluations', 0) 
+            for model_id in self.available_models
+        ]
+        avg_evals = sum(eval_counts) / len(eval_counts) if eval_counts else 0
+        
+        # If average evaluations are still low, bias towards round-robin
+        if avg_evals < FULL_EVALUATION_THRESHOLD:
+            # Sort models by evaluation count (ascending)
+            sorted_models = sorted(
+                [(m, model_evaluations.get(m, {}).get('quality_evaluations', 0)) 
+                 for m in self.available_models if m != self.current_model],
+                key=lambda x: x[1]
+            )
+            
+            if sorted_models:
+                # Calculate probability weights with strong bias for less evaluated models
+                weights = [max(0.1, 1.0 - (eval_count / FULL_EVALUATION_THRESHOLD)) 
+                          for _, eval_count in sorted_models]
+                
+                # Normalize weights
+                total_weight = sum(weights)
+                norm_weights = [w / total_weight for w in weights] if total_weight > 0 else None
+                
+                # Select model using weighted probability
+                if norm_weights:
+                    model_ids = [model_id for model_id, _ in sorted_models]
+                    selected_model = random.choices(model_ids, weights=norm_weights, k=1)[0]
+                    logger.info(f"Transition mode: selected {selected_model} using weighted probability")
+                    return selected_model
+        
+        # If we reached here, either all models have good evaluation counts
+        # or something went wrong - fall back to best model selection
+        logger.info("Criteria-based mode: selecting best performing model")
+        
+        # Fall back to criteria-based selection (best performing model)
+        best_model = self._get_best_performance_model()
+        if best_model != self.current_model:
+            return best_model
+        
+        # If best model is current model, randomly select a different one
+        candidates = [m for m in self.available_models if m != self.current_model]
         if candidates:
-            return candidates[0]
-        
-        # If all models have been evaluated or there's only one model,
-        # return a random model that's not the current one
-        import random
-        all_candidates = [m for m in self.available_models if m != self.current_model]
-        if all_candidates:
-            return random.choice(all_candidates)
+            return random.choice(candidates)
         
         # If all else fails, return the current model
         logger.warning("No alternative models available for evaluation")
         return self.current_model
+        
+    def _get_best_performance_model(self) -> str:
+        """
+        Get the best performing model based on quality and success rate
+        
+        This is used by the adaptive model evaluation system
+        when we have enough evaluations.
+        
+        Returns:
+            Best model ID based on performance
+        """
+        from models import ModelPerformance
+        
+        best_score = -1
+        best_model = self.current_model
+        
+        # Query all models from database
+        models = ModelPerformance.query.all()
+        
+        for model in models:
+            # Skip models that aren't in our available list
+            if model.model_id not in self.available_models:
+                continue
+                
+            # Calculate weighted score based on quality score and success rate
+            quality_weight = 0.7
+            success_weight = 0.3
+            
+            quality_score = model.average_quality() if hasattr(model, 'average_quality') else 0
+            success_rate = model.success_rate() if hasattr(model, 'success_rate') else 0
+            
+            weighted_score = (quality_weight * quality_score) + (success_weight * success_rate)
+            
+            if weighted_score > best_score:
+                best_score = weighted_score
+                best_model = model.model_id
+                
+        return best_model
     
     def _get_best_model(self) -> str:
         """
