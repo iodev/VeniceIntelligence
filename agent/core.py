@@ -71,10 +71,12 @@ class Agent:
         """
         from models import ModelPerformance
         from main import db
+        from agent.cost_control import CostMonitor
         
         self.venice_client = venice_client
         self.memory_manager = memory_manager
         self.available_models = available_models
+        self.cost_monitor = CostMonitor()
         
         # Load or initialize models in database
         init_default_models()
@@ -96,13 +98,14 @@ class Agent:
         self.interaction_count = 0
         logger.info(f"Agent initialized with current model: {self.current_model}")
     
-    def process_query(self, query: str, system_prompt: str) -> Tuple[str, str]:
+    def process_query(self, query: str, system_prompt: str, query_type: str = "text") -> Tuple[str, str]:
         """
         Process a user query and return the response using the most appropriate model.
         
         Args:
             query: The user's query
             system_prompt: System prompt describing the agent's purpose
+            query_type: Type of query (text, code, image)
             
         Returns:
             Tuple of (response text, model used)
@@ -123,8 +126,30 @@ class Agent:
             model_to_use = self._select_model_for_evaluation()
             logger.info(f"Evaluating model: {model_to_use}")
         else:
-            model_to_use = self._get_best_model()
-            logger.info(f"Using best model: {model_to_use}")
+            # Convert query_type to task_type for cost monitoring
+            task_type = "general"
+            if query_type == "code":
+                task_type = "code"
+            elif query_type == "image":
+                task_type = "image"
+                
+            # Try to get the best model from cost monitor based on query type
+            try:
+                model_id, provider = self.cost_monitor.select_model_for_task(
+                    task_type=task_type, 
+                    content_type=query_type
+                )
+                if model_id and provider == "venice":
+                    model_to_use = model_id
+                    logger.info(f"Selected model for {query_type}/{task_type}: {model_to_use}")
+                else:
+                    # Fall back to standard model selection if not a Venice model
+                    model_to_use = self._get_best_model()
+                    logger.info(f"Using best model: {model_to_use}")
+            except Exception as e:
+                logger.error(f"Error selecting model by task: {str(e)}")
+                model_to_use = self._get_best_model()
+                logger.info(f"Fallback to best model: {model_to_use}")
         
         # Call the model
         start_time = time.time()
