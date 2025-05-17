@@ -66,7 +66,7 @@ class AnthropicClient:
             ]
             
             data = {
-                "model": "claude-3.5-sonnet-20241022",
+                "model": "claude-3-5-sonnet-20241022",
                 "messages": test_messages,
                 "max_tokens": 5,
                 "temperature": 0.1
@@ -108,7 +108,7 @@ class AnthropicClient:
     def generate(
         self, 
         messages: list, 
-        model: str = "claude-3.5-sonnet-20241022",
+        model: str = "claude-3-5-sonnet-20241022",
         max_tokens: int = 1024,
         temperature: float = 0.7,
         top_p: float = 0.9,
@@ -185,10 +185,10 @@ class AnthropicClient:
             List of model information
         """
         # Use static list of known models
-        # The newest Anthropic model is "claude-3.5-sonnet-20241022" which was released October a22, 2024
+        # The newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
         return [
             {
-                "id": "claude-3.5-sonnet-20241022",
+                "id": "claude-3-5-sonnet-20241022",
                 "name": "Claude 3.5 Sonnet",
                 "context_window": 200000,
                 "provider": "anthropic"
