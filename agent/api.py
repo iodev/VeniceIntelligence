@@ -141,21 +141,106 @@ class ModelManager:
         else:
             return self.models
         
-    def refresh_models(self) -> bool:
+    def refresh_models(self, agent=None) -> bool:
         """
         Refresh the available models list from all providers
         
+        Args:
+            agent: Optional agent instance to access provider clients
+            
         Returns:
             Success status
         """
         try:
-            # This would typically involve querying each provider's API
-            # for their current available models
-            logger.info("Refreshing available models from all providers")
+            if agent is None:
+                logger.warning("Cannot refresh models without agent instance")
+                return False
+                
+            # Refresh Venice models
+            if hasattr(agent, 'venice_client') and agent.venice_client:
+                try:
+                    venice_models = agent.venice_client.get_available_models()
+                    for model_info in venice_models:
+                        self.register_model("venice", model_info["id"], model_info)
+                    logger.info(f"Refreshed {len(venice_models)} Venice models")
+                except Exception as e:
+                    logger.error(f"Error refreshing Venice models: {str(e)}")
+            
+            # Refresh Perplexity models
+            if hasattr(agent, 'perplexity_client') and agent.perplexity_client:
+                try:
+                    perplexity_models = agent.perplexity_client.get_available_models()
+                    for model_info in perplexity_models:
+                        self.register_model("perplexity", model_info["id"], model_info)
+                    logger.info(f"Refreshed {len(perplexity_models)} Perplexity models")
+                except Exception as e:
+                    logger.error(f"Error refreshing Perplexity models: {str(e)}")
+            
+            # Refresh Anthropic models
+            if hasattr(agent, 'anthropic_client') and agent.anthropic_client:
+                try:
+                    anthropic_models = agent.anthropic_client.get_available_models()
+                    for model_info in anthropic_models:
+                        self.register_model("anthropic", model_info["id"], model_info)
+                    logger.info(f"Refreshed {len(anthropic_models)} Anthropic models")
+                except Exception as e:
+                    logger.error(f"Error refreshing Anthropic models: {str(e)}")
+                    
+            # Check for deprecated models
+            self._mark_deprecated_models(agent)
+            
+            logger.info("Completed refreshing available models from all providers")
             return True
         except Exception as e:
             logger.error(f"Failed to refresh models: {str(e)}")
             return False
+            
+    def _mark_deprecated_models(self, agent) -> None:
+        """
+        Mark models as deprecated if they're no longer available from providers
+        
+        Args:
+            agent: Agent instance to access provider clients
+        """
+        from models import ModelPerformance
+        
+        # Get all active models from database
+        active_models = ModelPerformance.query.filter_by(is_available=True).all()
+        current_models = {}
+        
+        # Collect currently available models from each provider
+        if hasattr(agent, 'venice_client') and agent.venice_client:
+            try:
+                venice_models = agent.venice_client.get_available_models()
+                current_models["venice"] = [m["id"] for m in venice_models]
+            except:
+                current_models["venice"] = []
+                
+        if hasattr(agent, 'perplexity_client') and agent.perplexity_client:
+            try:
+                perplexity_models = agent.perplexity_client.get_available_models()
+                current_models["perplexity"] = [m["id"] for m in perplexity_models]
+            except:
+                current_models["perplexity"] = []
+                
+        if hasattr(agent, 'anthropic_client') and agent.anthropic_client:
+            try:
+                anthropic_models = agent.anthropic_client.get_available_models()
+                current_models["anthropic"] = [m["id"] for m in anthropic_models]
+            except:
+                current_models["anthropic"] = []
+        
+        # Check each active model to see if it's still available
+        for model in active_models:
+            provider = model.provider
+            model_id = model.model_id
+            
+            if provider in current_models and model_id not in current_models[provider]:
+                # Model is no longer available, mark as deprecated
+                model.is_available = False
+                logger.info(f"Marked model {provider}:{model_id} as deprecated")
+        
+        self.db.session.commit()
 
 
 class AgentAPI:
@@ -272,25 +357,50 @@ class AgentAPI:
             Dictionary with model information grouped by provider
         """
         try:
-            models_by_provider = {}
+            # First refresh models to ensure we have the latest information
+            self.model_manager.refresh_models(self.agent)
             
-            # Get Venice models
-            if hasattr(self.agent, 'venice_client') and self.agent.venice_client:
-                venice_models = self.agent.venice_client.get_available_models()
-                models_by_provider['venice'] = venice_models
+            # Get models from the model manager
+            models_by_provider = self.model_manager.get_available_models()
             
-            # Get other provider models if available
-            if hasattr(self.agent, 'perplexity_client') and self.agent.perplexity_client:
-                perplexity_models = self.agent.perplexity_client.get_available_models()
-                models_by_provider['perplexity'] = perplexity_models
+            # If no models are available from the model manager, fall back to direct queries
+            if not models_by_provider:
+                logger.info("No models found in model manager, querying providers directly")
+                models_by_provider = {}
+                
+                # Get Venice models
+                if hasattr(self.agent, 'venice_client') and self.agent.venice_client:
+                    venice_models = self.agent.venice_client.get_available_models()
+                    models_by_provider['venice'] = venice_models
+                
+                # Get other provider models if available
+                if hasattr(self.agent, 'perplexity_client') and self.agent.perplexity_client:
+                    perplexity_models = self.agent.perplexity_client.get_available_models()
+                    models_by_provider['perplexity'] = perplexity_models
+                
+                if hasattr(self.agent, 'anthropic_client') and self.agent.anthropic_client:
+                    anthropic_models = self.agent.anthropic_client.get_available_models()
+                    models_by_provider['anthropic'] = anthropic_models
             
-            if hasattr(self.agent, 'anthropic_client') and self.agent.anthropic_client:
-                anthropic_models = self.agent.anthropic_client.get_available_models()
-                models_by_provider['anthropic'] = anthropic_models
+            # Add model status information from database
+            from models import ModelPerformance
+            all_models = ModelPerformance.query.all()
+            model_status = {}
+            
+            for model in all_models:
+                key = f"{model.provider}:{model.model_id}"
+                model_status[key] = {
+                    "is_available": model.is_available,
+                    "is_current": model.is_current,
+                    "success_rate": model.success_rate() if hasattr(model, 'success_rate') else 0,
+                    "average_latency": model.average_latency() if hasattr(model, 'average_latency') else 0,
+                    "average_quality": model.average_quality() if hasattr(model, 'average_quality') else 0
+                }
                 
             return {
                 "status": "success",
-                "models": models_by_provider
+                "models": models_by_provider,
+                "model_status": model_status
             }
         except Exception as e:
             logger.error(f"Error getting available models: {str(e)}")

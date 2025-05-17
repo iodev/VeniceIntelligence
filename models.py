@@ -15,6 +15,7 @@ class ModelPerformance(db.Model):
     quality_score = db.Column(Float, default=0.0)
     quality_evaluations = db.Column(Integer, default=0)
     is_current = db.Column(Boolean, default=False)
+    is_available = db.Column(Boolean, default=True, index=True)  # Whether the model is still available from provider
     capabilities = db.Column(String(200), default="text", nullable=False)  # text, code, image, etc.
     context_window = db.Column(Integer, default=8192)  # Token context window
     cost_per_1k_tokens = db.Column(Float, default=0.0)  # Cost per 1k tokens in USD
