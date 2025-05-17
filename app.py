@@ -10,7 +10,8 @@ from agent.image import VeniceImageClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
 from agent.huggingface_client import HuggingFaceClient
-from models import ModelPerformance
+from agent.cost_control import CostMonitor
+from models import ModelPerformance, UsageCost, ModelEfficiency, CostControlStrategy
 import config
 
 # Set up logging
@@ -22,10 +23,11 @@ venice_client = None
 venice_image_client = None
 memory_manager = None
 agent = None
+cost_monitor = None
 
 # Function to initialize the agent (to be called within app context)
 def init_agent():
-    global venice_client, venice_image_client, memory_manager, agent
+    global venice_client, venice_image_client, memory_manager, agent, cost_monitor
     
     try:
         # Initialize Venice API clients
@@ -56,6 +58,10 @@ def init_agent():
             available_models=config.AVAILABLE_MODELS,
             default_model=config.DEFAULT_MODEL
         )
+        
+        # Initialize cost monitor
+        cost_monitor = CostMonitor()
+        
         logger.info("Agent initialized successfully")
         return True
     except Exception as e:
@@ -272,6 +278,101 @@ def get_image_models():
     except Exception as e:
         logger.error(f"Error fetching image models: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+@app.route('/cost-monitor')
+def cost_monitor_page():
+    """Cost monitoring and optimization dashboard"""
+    if cost_monitor is None:
+        flash("Cost monitoring is not initialized", "danger")
+        return redirect(url_for('index'))
+    
+    # Get cost summary and efficiency metrics
+    cost_summary = cost_monitor.get_cost_summary()
+    efficiency_metrics = cost_monitor.get_efficiency_metrics()
+    strategy = cost_monitor.get_current_strategy()
+    
+    return render_template('cost_monitor.html',
+                          cost_summary=cost_summary,
+                          efficiency_metrics=efficiency_metrics,
+                          strategy=strategy)
+
+@app.route('/admin/update-budget', methods=['POST'])
+def update_budget():
+    """Update the daily budget for cost control"""
+    if cost_monitor is None:
+        return jsonify({"error": "Cost monitoring is not initialized"}), 500
+    
+    try:
+        daily_budget = float(request.form.get('daily_budget', 1.0))
+        
+        # Update strategy with new budget
+        strategy_data = {"daily_budget": daily_budget}
+        success = cost_monitor.update_strategy(strategy_data)
+        
+        if success:
+            flash(f"Daily budget updated to ${daily_budget:.2f}", "success")
+        else:
+            flash("Failed to update budget", "danger")
+            
+        return redirect(url_for('cost_monitor_page'))
+    except Exception as e:
+        logger.error(f"Error updating budget: {str(e)}")
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for('cost_monitor_page'))
+
+@app.route('/admin/update-strategy', methods=['POST'])
+def update_strategy():
+    """Update the model selection strategy"""
+    if cost_monitor is None:
+        return jsonify({"error": "Cost monitoring is not initialized"}), 500
+    
+    try:
+        # Get basic strategy parameters
+        strategy_data = {
+            "name": request.form.get('name', 'Default Strategy'),
+            "description": request.form.get('description', ''),
+            "prioritize_cost": float(request.form.get('prioritize_cost', 0.3)),
+            "prioritize_speed": float(request.form.get('prioritize_speed', 0.3)),
+            "prioritize_accuracy": float(request.form.get('prioritize_accuracy', 0.4)),
+            "cost_threshold": float(request.form.get('cost_threshold', 0.8)),
+            "fallback_model": request.form.get('fallback_model', 'llama-3.2-3b')
+        }
+        
+        # Build task mappings
+        text_mapping = {
+            "general": request.form.get('text_mapping_general', 'llama-3.1-sonar-small-128k-online'),
+            "creative": request.form.get('text_mapping_creative', 'claude-3.5-sonnet-20241022'),
+            "analytical": request.form.get('text_mapping_analytical', 'mistral-31-24b')
+        }
+        
+        code_mapping = {
+            "general": request.form.get('code_mapping_general', 'mistral-31-24b'),
+            "python": request.form.get('code_mapping_python', 'mistral-31-24b'),
+            "javascript": request.form.get('code_mapping_javascript', 'llama-3.2-3b')
+        }
+        
+        image_mapping = {
+            "general": request.form.get('image_mapping_general', 'stable-diffusion-xl-1024-v1-0')
+        }
+        
+        # Add mappings to strategy data
+        strategy_data["text_task_mapping"] = text_mapping
+        strategy_data["code_task_mapping"] = code_mapping
+        strategy_data["image_task_mapping"] = image_mapping
+        
+        # Update strategy
+        success = cost_monitor.update_strategy(strategy_data)
+        
+        if success:
+            flash("Strategy updated successfully", "success")
+        else:
+            flash("Failed to update strategy", "danger")
+            
+        return redirect(url_for('cost_monitor_page'))
+    except Exception as e:
+        logger.error(f"Error updating strategy: {str(e)}")
+        flash(f"Error: {str(e)}", "danger")
+        return redirect(url_for('cost_monitor_page'))
 
 @app.route('/admin')
 def admin():
