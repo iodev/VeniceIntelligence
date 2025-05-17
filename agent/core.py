@@ -103,6 +103,14 @@ class Agent:
                 "negative_feedback": 0
             }
         }
+        
+        # Temporarily store the last multi-provider query details
+        self._last_multi_provider_query = {
+            "used": False,
+            "query_type": None,
+            "timestamp": None,
+            "providers_used": []
+        }
         from models import ModelPerformance
         from main import db
         from agent.cost_control import CostMonitor
@@ -253,6 +261,19 @@ class Agent:
                 
                 # Collect responses from multiple providers in parallel
                 response, model_to_use, provider = self._query_multiple_providers(messages, query_type)
+                
+                # Track that we used multi-provider mode
+                self._last_multi_provider_query = {
+                    "used": True,
+                    "query_type": query_type,
+                    "timestamp": time.time(),
+                    "providers_used": self._get_active_providers()
+                }
+                
+                # Update statistics
+                if query_type in self._multi_provider_stats:
+                    self._multi_provider_stats[query_type]["total_uses"] += 1
+                
                 success = True
             elif provider == "venice":
                 # Always prioritize Venice API as it's the most reliable
