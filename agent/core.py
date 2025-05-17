@@ -802,32 +802,58 @@ class Agent:
         Returns:
             Best model ID
         """
+        from models import ModelPerformance
+        
         best_score = -1
         best_model = self.current_model
         
-        for model, perf in self.model_performance.items():
-            if perf["total_calls"] < 5:  # Need minimum calls for reliability
+        # Get model records from database
+        model_records = ModelPerformance.query.all()
+        
+        # Convert to dictionary for easier access and calculations
+        model_data = {}
+        max_speed_value = 0
+        
+        for record in model_records:
+            # Skip models that aren't in our available list
+            if record.model_id not in self.available_models:
                 continue
                 
-            # Calculate a combined score (70% success rate, 30% speed)
-            success_rate = perf["success_rate"] if perf["success_rate"] > 0 else 0
+            if record.total_calls < 5:  # Need minimum calls for reliability
+                continue
+                
+            success_rate = record.success_rate()
+            avg_latency = record.average_latency()
             
-            # Convert latency to speed score (lower is better)
-            avg_latency = perf["average_latency"] if perf["average_latency"] > 0 else 1
+            # Store for later use
+            model_data[record.model_id] = {
+                "success_rate": success_rate,
+                "average_latency": avg_latency
+            }
+            
+            # Track maximum speed for normalization
+            if avg_latency > 0:
+                speed = 1.0 / avg_latency
+                max_speed_value = max(max_speed_value, speed)
+        
+        # Calculate scores for each model
+        for model_id, data in model_data.items():
+            success_rate = data["success_rate"] if data["success_rate"] > 0 else 0
+            
+            # Convert latency to speed score (lower latency is better)
+            avg_latency = data["average_latency"] if data["average_latency"] > 0 else 1
             speed_score = 1.0 / avg_latency
             
             # Normalize speed score to 0-1 range
-            max_speed = max([1.0 / p["average_latency"] if p["average_latency"] > 0 else 0 
-                           for p in self.model_performance.values()])
-            if max_speed > 0:
-                speed_score = speed_score / max_speed
+            if max_speed_value > 0:
+                speed_score = speed_score / max_speed_value
             
             # Combined score
             score = (0.7 * success_rate) + (0.3 * speed_score)
             
             if score > best_score:
                 best_score = score
-                best_model = model
+                best_model = model_id
         
         return best_model
     

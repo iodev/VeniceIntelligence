@@ -2,9 +2,9 @@
 
 ## Priority 1: Critical Fixes
 - [✓] Fix naming inconsistency in memory management: app.py calls `clear_memory()` but MemoryManager implements `clear_memories()` (FIXED: the method was already using clear_memories correctly)
-- [IN PROGRESS] Fix undeclared/undefined `cost_monitor` reference in app.py's update_strategy route (line 522)
-- Fix `'Agent' object has no attribute 'model_performance'` error in the agent core module
-- Implement missing can_use_high_accuracy_mode method in CostMonitor class
+- [✓] Fix undeclared/undefined `cost_monitor` reference in app.py's update_strategy route (line 522) (FIXED: replaced with agent.cost_monitor references)
+- [✓] Fix `'Agent' object has no attribute 'model_performance'` error in the agent core module (FIXED: updated _get_best_model to use database directly instead of the local model_performance dictionary)
+- [IN PROGRESS] Implement missing can_use_high_accuracy_mode method in CostMonitor class
 
 ## Priority 2: Method Implementation Issues (By Folder)
 ### agent/api.py

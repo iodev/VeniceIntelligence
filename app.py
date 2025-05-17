@@ -557,7 +557,7 @@ def update_strategy():
         strategy_data["image_task_mapping"] = image_mapping
         
         # Update strategy
-        success = cost_monitor.update_strategy(strategy_data)
+        success = agent.cost_monitor.update_strategy(strategy_data)
         
         if success:
             flash("Strategy updated successfully", "success")
