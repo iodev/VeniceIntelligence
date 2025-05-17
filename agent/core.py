@@ -51,8 +51,9 @@ def init_default_models():
 
 class Agent:
     """
-    Self-learning agent that adapts to different Venice.ai API models
-    based on performance and maintains persistent memory with Qdrant.
+    Self-learning agent that adapts to different AI models from multiple providers
+    (Venice.ai, Anthropic, Perplexity) based on performance
+    and maintains persistent memory with Qdrant.
     """
     
     def __init__(
@@ -177,8 +178,21 @@ class Agent:
                 model_to_use = self._get_best_model()
                 logger.info(f"Fallback to best model: {model_to_use}")
         
+        # Add helper method to determine provider for model_id
+        def get_provider_for_model(model_id):
+            # Check for Anthropic models
+            if model_id.startswith("claude-"):
+                return "anthropic"
+                
+            # Check for Perplexity models
+            if model_id.startswith("llama-3.1-sonar-"):
+                return "perplexity"
+                
+            # Default to Venice for all other models
+            return "venice"
+        
         # Determine which provider to use based on the model
-        provider = self._get_provider_for_model(model_to_use)
+        provider = get_provider_for_model(model_to_use)
         
         # Call the appropriate model based on provider
         start_time = time.time()
@@ -187,11 +201,11 @@ class Agent:
                 response_data = self.venice_client.generate(messages, model=model_to_use)
                 response = response_data
                 success = True
-            elif provider == "anthropic" and hasattr(self, 'anthropic_client'):
+            elif provider == "anthropic" and hasattr(self, 'anthropic_client') and self.anthropic_client:
                 response_data = self.anthropic_client.generate(messages, model=model_to_use)
                 response = response_data.get('content', [])[0].get('text', "")
                 success = True
-            elif provider == "perplexity" and hasattr(self, 'perplexity_client'):
+            elif provider == "perplexity" and hasattr(self, 'perplexity_client') and self.perplexity_client:
                 response_data = self.perplexity_client.generate(messages, model=model_to_use)
                 response = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
                 success = True
@@ -199,6 +213,7 @@ class Agent:
                 # Default to Venice client
                 response = self.venice_client.generate(messages, model=self.current_model)
                 model_to_use = self.current_model
+                provider = "venice"
                 success = True
         except Exception as e:
             logger.error(f"Error generating response with {provider} model {model_to_use}: {str(e)}")
