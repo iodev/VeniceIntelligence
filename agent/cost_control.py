@@ -469,59 +469,92 @@ class CostMonitor:
     
     def get_cost_summary(self) -> Dict[str, Any]:
         """
-        Get summary of costs across all providers
+        Get summary of costs across all providers,
+        focusing on agent, model, and token efficiency metrics
         
         Returns:
-            Dictionary with cost summary
+            Dictionary with detailed cost metrics by agent and model
         """
-        if not self._current_strategy:
-            return {
-                "daily_budget": 0.0,
-                "current_spending": 0.0,
-                "budget_percent": 0.0,
-                "by_provider": {},
-                "by_model": {}
-            }
-            
-        # Calculate summary
-        by_provider = {}
-        by_model = {}
-        
-        # Group by provider
-        for key, usage in self._daily_usage.items():
-            provider, model_id = key.split(":")
-            
-            # Provider totals
-            if provider not in by_provider:
-                by_provider[provider] = {
-                    "cost": 0.0,
-                    "tokens": 0,
-                    "requests": 0
-                }
-                
-            by_provider[provider]["cost"] += usage["cost"]
-            by_provider[provider]["tokens"] += usage["request_tokens"] + usage["response_tokens"]
-            by_provider[provider]["requests"] += usage["requests"]
-            
-            # Model totals
-            by_model[model_id] = {
-                "provider": provider,
-                "cost": usage["cost"],
-                "tokens": usage["request_tokens"] + usage["response_tokens"],
-                "requests": usage["requests"]
-            }
-        
-        # Get total cost and budget percent
-        total_cost = self._current_strategy.current_spending
-        budget_percent = (total_cost / self._current_strategy.daily_budget) * 100 if self._current_strategy.daily_budget > 0 else 0
-        
-        return {
-            "daily_budget": self._current_strategy.daily_budget,
-            "current_spending": total_cost,
-            "budget_percent": budget_percent,
-            "by_provider": by_provider,
-            "by_model": by_model
+        summary = {
+            "total_spend": 0.0,
+            "request_count": 0,
+            "agent_costs": {},
+            "model_costs": {},
+            "provider_costs": {},
+            "total_tokens": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "token_efficiency": {}
         }
+            
+        # Load all usage records
+        all_usage = UsageCost.query.all()
+        summary["request_count"] = len(all_usage)
+        
+        # Process usage data
+        for usage in all_usage:
+            # Add to total spend
+            summary["total_spend"] += usage.cost
+            
+            # Add to token counts
+            summary["total_tokens"] += usage.total_tokens
+            summary["input_tokens"] += usage.request_tokens
+            summary["output_tokens"] += usage.response_tokens
+            
+            # Track by agent
+            agent_id = usage.agent_id or "unassigned"
+            if agent_id not in summary["agent_costs"]:
+                summary["agent_costs"][agent_id] = {
+                    "cost": 0.0,
+                    "request_tokens": 0,
+                    "response_tokens": 0,
+                    "tokens_per_dollar": 0.0
+                }
+            summary["agent_costs"][agent_id]["cost"] += usage.cost
+            summary["agent_costs"][agent_id]["request_tokens"] += usage.request_tokens
+            summary["agent_costs"][agent_id]["response_tokens"] += usage.response_tokens
+            
+            # Track by model
+            model_key = f"{usage.provider}:{usage.model_id}"
+            if model_key not in summary["model_costs"]:
+                summary["model_costs"][model_key] = {
+                    "cost": 0.0,
+                    "request_tokens": 0,
+                    "response_tokens": 0,
+                    "tokens_per_dollar_input": 0.0,
+                    "tokens_per_dollar_output": 0.0,
+                    "tokens_per_dollar_total": 0.0
+                }
+            summary["model_costs"][model_key]["cost"] += usage.cost
+            summary["model_costs"][model_key]["request_tokens"] += usage.request_tokens
+            summary["model_costs"][model_key]["response_tokens"] += usage.response_tokens
+            
+            # Add to provider costs
+            if usage.provider not in summary["provider_costs"]:
+                summary["provider_costs"][usage.provider] = 0.0
+            summary["provider_costs"][usage.provider] += usage.cost
+        
+        # Calculate token efficiency for each agent
+        for agent_id, data in summary["agent_costs"].items():
+            if data["cost"] > 0:
+                data["tokens_per_dollar"] = (data["request_tokens"] + data["response_tokens"]) / data["cost"]
+        
+        # Calculate token efficiency for each model
+        for model_key, data in summary["model_costs"].items():
+            if data["cost"] > 0:
+                data["tokens_per_dollar_input"] = data["request_tokens"] / data["cost"]
+                data["tokens_per_dollar_output"] = data["response_tokens"] / data["cost"] 
+                data["tokens_per_dollar_total"] = (data["request_tokens"] + data["response_tokens"]) / data["cost"]
+        
+        # Overall token efficiency
+        if summary["total_spend"] > 0:
+            summary["token_efficiency"] = {
+                "tokens_per_dollar_input": summary["input_tokens"] / summary["total_spend"],
+                "tokens_per_dollar_output": summary["output_tokens"] / summary["total_spend"],
+                "tokens_per_dollar_total": summary["total_tokens"] / summary["total_spend"]
+            }
+            
+        return summary
     
     def get_efficiency_metrics(self) -> List[Dict[str, Any]]:
         """

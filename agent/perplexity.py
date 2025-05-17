@@ -1,7 +1,12 @@
+"""
+Perplexity API client for the Agent system.
+"""
+import os
 import logging
 import json
-import os
-from typing import List, Dict, Any, Optional, Union
+import time
+from typing import Dict, List, Any, Optional, Union
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -23,23 +28,16 @@ class PerplexityClient:
             api_key: Perplexity API key
             base_url: Base URL for Perplexity API
         """
-        self.api_key = api_key or os.environ.get("PERPLEXITY_API_KEY", "")
-        self.base_url = base_url
-        
-        # Basic validation
+        self.api_key = api_key or os.environ.get("PERPLEXITY_API_KEY")
         if not self.api_key:
-            logger.warning("No Perplexity API key provided")
-        
-        # Set up main session for completions
-        self.session = requests.Session()
-        self.session.headers.update({
+            logger.warning("No Perplexity API key provided, functionality will be limited")
+            
+        self.base_url = base_url
+        self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
-        })
+        }
         
-        # Test connection
-        self.test_connection()
-    
     def test_connection(self) -> bool:
         """
         Test the connection to the Perplexity API
@@ -47,93 +45,128 @@ class PerplexityClient:
         Returns:
             Whether the connection was successful
         """
-        try:
-            # Simple query to test the connection
-            test_messages = [
-                {"role": "system", "content": "Be precise and concise."},
-                {"role": "user", "content": "Hello, this is a test."}
-            ]
+        if not self.api_key:
+            logger.error("Cannot test connection without API key")
+            return False
             
-            response = self.generate(messages=test_messages, max_tokens=5)
-            logger.info("Successfully connected to Perplexity API")
-            return True
+        try:
+            # Simple query to test if the API key is valid
+            response = self.generate(
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Hello, are you working?"}
+                ],
+                model="llama-3.1-sonar-small-128k-online",
+                max_tokens=10
+            )
+            return "id" in response
         except Exception as e:
-            logger.error(f"Error connecting to Perplexity API: {str(e)}")
+            logger.error(f"Failed to connect to Perplexity API: {e}")
             return False
     
     def generate(
         self, 
-        messages: list, 
+        messages: List[Dict[str, str]], 
         model: str = "llama-3.1-sonar-small-128k-online",
         max_tokens: Optional[int] = None,
         temperature: float = 0.2,
         top_p: float = 0.9,
-        stream: bool = False
+        top_k: int = 0,
+        presence_penalty: float = 0,
+        frequency_penalty: float = 1,
+        stream: bool = False,
+        search_domain_filter: Optional[List[str]] = None,
+        search_recency_filter: Optional[str] = "month",
+        return_images: bool = False,
+        return_related_questions: bool = False
     ) -> Dict[str, Any]:
         """
         Generate text using Perplexity API
         
         Args:
-            messages: List of message objects (system, user, etc.)
+            messages: List of message objects (user, assistant, system)
             model: Model ID to use
             max_tokens: Maximum number of tokens to generate
             temperature: Sampling temperature (0-1)
             top_p: Top-p sampling parameter
+            top_k: Top-k sampling parameter
+            presence_penalty: Presence penalty parameter
+            frequency_penalty: Frequency penalty parameter
             stream: Whether to stream the response
+            search_domain_filter: List of domains to search
+            search_recency_filter: Time range for search
+            return_images: Whether to return images
+            return_related_questions: Whether to return related questions
             
         Returns:
             Generated text with metadata
         """
-        if not messages:
-            raise ValueError("Messages cannot be empty")
+        if not self.api_key:
+            raise ValueError("Cannot generate text without API key")
             
-        logger.info(f"Generating with Perplexity model: {model}")
+        # Ensure valid model choice
+        valid_models = ["llama-3.1-sonar-small-128k-online", 
+                        "llama-3.1-sonar-large-128k-online", 
+                        "llama-3.1-sonar-huge-128k-online"]
         
-        # Perplexity API payload
+        if model not in valid_models:
+            logger.warning(f"Model {model} not in valid models: {valid_models}. Using llama-3.1-sonar-small-128k-online")
+            model = "llama-3.1-sonar-small-128k-online"
+            
+        # Build request
+        url = f"{self.base_url}/chat/completions"
+        
         payload = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
             "top_p": top_p,
+            "top_k": top_k,
+            "presence_penalty": presence_penalty,
+            "frequency_penalty": frequency_penalty,
             "stream": stream,
-            "return_images": False,
-            "return_related_questions": False,
-            "frequency_penalty": 1
+            "return_images": return_images,
+            "return_related_questions": return_related_questions
         }
         
-        # Add max_tokens if provided
-        if max_tokens is not None:
+        if max_tokens:
             payload["max_tokens"] = max_tokens
             
+        if search_domain_filter:
+            payload["search_domain_filter"] = search_domain_filter
+            
+        if search_recency_filter:
+            payload["search_recency_filter"] = search_recency_filter
+            
+        start_time = time.time()
+        
         try:
-            response = self.session.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                timeout=60  # Longer timeout for generation
-            )
+            response = requests.post(url, headers=self.headers, json=payload)
+            response.raise_for_status()
             
-            if response.status_code != 200:
-                error_msg = f"Perplexity API error: {response.status_code}"
-                if hasattr(response, 'text'):
-                    error_msg += f" - {response.text}"
-                logger.error(error_msg)
-                raise Exception(error_msg)
+            if stream:
+                # Handle streaming response (not implemented in this version)
+                raise NotImplementedError("Streaming not implemented yet")
+            else:
+                # Return the full response data
+                result = response.json()
+                
+                # Calculate latency
+                latency = time.time() - start_time
+                result["_meta"] = {
+                    "latency": latency
+                }
+                
+                return result
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error while generating text with Perplexity API: {e}")
             
-            result = response.json()
-            logger.debug(f"Response JSON: {result}")
-            
-            return result
-            
-        except requests.RequestException as e:
-            logger.error(f"Request error with Perplexity API: {str(e)}")
-            raise Exception(f"Failed to communicate with Perplexity API: {str(e)}")
-        except json.JSONDecodeError as e:
-            logger.error(f"Invalid JSON response: {str(e)}")
-            raise Exception(f"Invalid response format from Perplexity API")
-        except Exception as e:
-            logger.error(f"Unexpected error: {str(e)}")
-            raise
-            
+            if hasattr(e, 'response') and e.response:
+                logger.error(f"Response: {e.response.text}")
+                
+            raise ValueError(f"Perplexity API error: {e}")
+    
     def get_available_models(self) -> List[Dict[str, Any]]:
         """
         Get list of available models for Perplexity
@@ -141,25 +174,46 @@ class PerplexityClient:
         Returns:
             List of model information
         """
-        # Perplexity doesn't have a dedicated models endpoint
-        # Return static list of known models
         return [
             {
                 "id": "llama-3.1-sonar-small-128k-online",
-                "name": "Llama 3.1 Sonar Small (128k)",
-                "context_window": 128000,
-                "provider": "perplexity"
+                "provider": "perplexity",
+                "name": "Llama 3.1 Sonar Small",
+                "context_length": 128000,
+                "capabilities": ["text", "search"],
+                "cost_per_1k_tokens": 0.00025,  # Input tokens
+                "cost_per_1k_tokens_output": 0.00125  # Output tokens
             },
             {
                 "id": "llama-3.1-sonar-large-128k-online",
-                "name": "Llama 3.1 Sonar Large (128k)",
-                "context_window": 128000,
-                "provider": "perplexity"
+                "provider": "perplexity",
+                "name": "Llama 3.1 Sonar Large",
+                "context_length": 128000,
+                "capabilities": ["text", "search"],
+                "cost_per_1k_tokens": 0.0008,  # Input tokens
+                "cost_per_1k_tokens_output": 0.0024  # Output tokens
             },
             {
-                "id": "llama-3.1-sonar-huge-128k-online", 
-                "name": "Llama 3.1 Sonar Huge (128k)",
-                "context_window": 128000,
-                "provider": "perplexity"
+                "id": "llama-3.1-sonar-huge-128k-online",
+                "provider": "perplexity",
+                "name": "Llama 3.1 Sonar Huge",
+                "context_length": 128000,
+                "capabilities": ["text", "search"],
+                "cost_per_1k_tokens": 0.0016,  # Input tokens
+                "cost_per_1k_tokens_output": 0.0048  # Output tokens
             }
         ]
+    
+    def count_tokens(self, text: str) -> int:
+        """
+        Approximate token count for Perplexity models
+        
+        Args:
+            text: Input text
+            
+        Returns:
+            Estimated token count
+        """
+        # Very simple approximation - in production would use a proper tokenizer
+        words = text.split()
+        return len(words) * 4 // 3  # ~1.33 tokens per word on average
