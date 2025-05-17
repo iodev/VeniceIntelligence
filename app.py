@@ -240,6 +240,41 @@ def node_update_system_prompt():
             "success": False,
             "error": str(e)
         }), 500
+        
+@app.route('/api/node/register', methods=['POST'])
+def register_external_node():
+    """
+    Endpoint for external nodes to register with this agent
+    This allows parent nodes in a larger system to connect to this agent
+    """
+    if agent_api is None:
+        return jsonify({"error": "Agent API is not initialized"}), 500
+    
+    try:
+        data = request.json
+        node_id = data.get('node_id')
+        node_info = data.get('node_info', {})
+        
+        if not node_id:
+            return jsonify({"error": "Node ID is required"}), 400
+            
+        # Register the external node
+        result = agent_api.register_external_node(node_id, node_info)
+        
+        if result.get('status') == 'success':
+            return jsonify(result)
+        else:
+            return jsonify({
+                "success": False,
+                "error": result.get('error', 'Unknown error')
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Error registering external node: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 @app.route('/history')
 def history():

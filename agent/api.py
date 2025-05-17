@@ -532,19 +532,43 @@ class AgentAPI:
             Status dictionary with access details
         """
         try:
+            if not node_id:
+                return {
+                    "status": "error",
+                    "error": "Node ID is required",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
             # Generate an access token for this node
             # In a real implementation, this would use proper auth mechanisms
             access_token = str(uuid.uuid4())
             
+            # Extract node capabilities
+            capabilities = node_info.get('capabilities', [])
+            specialties = node_info.get('specialties', [])
+            
             # Here we would store the node information in a database
             # For now, we'll just log it
-            logger.info(f"Registered external node: {node_id}")
+            logger.info(f"Registered external node: {node_id} with capabilities: {capabilities}")
             
+            # Return success with API endpoints and agent information
             return {
                 "status": "success",
                 "message": f"Successfully registered node {node_id}",
                 "access_token": access_token,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "allowed_endpoints": [
+                    "/api/node/query",
+                    "/api/node/update_system_prompt",
+                    "/api/node/refresh_models"
+                ],
+                "agent_info": {
+                    "agent_id": getattr(self.agent, 'agent_id', 'main_agent'),
+                    "current_model": self.agent.current_model,
+                    "capabilities": ["text", "code", "image"],
+                    "default_system_prompt": getattr(self.agent, 'default_system_prompt', 
+                                                    "You are a helpful AI assistant.")
+                }
             }
         except Exception as e:
             logger.error(f"Error registering external node: {str(e)}")
