@@ -11,6 +11,7 @@ from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
 from agent.huggingface_client import HuggingFaceClient
 from agent.cost_control import CostMonitor
+from agent.api import AgentAPI
 from models import ModelPerformance, UsageCost, ModelEfficiency, CostControlStrategy
 import config
 
@@ -23,11 +24,11 @@ venice_client = None
 venice_image_client = None
 memory_manager = None
 agent = None
-cost_monitor = None
+agent_api = None  # API layer for external system integration
 
 # Function to initialize the agent (to be called within app context)
 def init_agent():
-    global venice_client, venice_image_client, memory_manager, agent, cost_monitor
+    global venice_client, venice_image_client, memory_manager, agent, agent_api
     
     try:
         # Initialize Venice API clients
@@ -59,8 +60,9 @@ def init_agent():
             default_model=config.DEFAULT_MODEL
         )
         
-        # Initialize cost monitor
-        cost_monitor = CostMonitor()
+        # Initialize API layer for external system integration
+        # This serves as the primary interface for other systems/nodes to interact with the agent
+        agent_api = AgentAPI(agent)
         
         logger.info("Agent initialized successfully")
         return True
@@ -86,8 +88,8 @@ def index():
 @app.route('/chat', methods=['POST', 'GET'])
 def chat():
     """Handle chat interactions with the agent"""
-    if agent is None:
-        return jsonify({"error": "Agent is not initialized"}), 500
+    if agent_api is None:
+        return jsonify({"error": "Agent API is not initialized"}), 500
     
     # Support both POST (JSON) and GET (for EventSource)
     stream = False
@@ -111,16 +113,25 @@ def chat():
         if stream:
             return stream_chat(query, system_prompt, query_type)
         else:
-            # Get agent response (non-streaming)
-            response, model_used = agent.process_query(query, system_prompt, query_type)
+            # Get response from the agent API
+            # The agent API layer handles all business logic
+            result = agent_api.process_query(
+                query=query, 
+                system_prompt=system_prompt, 
+                query_type=query_type
+            )
             
-            # Return the response with metadata
-            return jsonify({
-                "response": response,
-                "model_used": model_used,
-                "query_type": query_type,
-                "success": True
-            })
+            if result.get('status') == 'success':
+                # Return the response with metadata
+                return jsonify({
+                    "response": result.get('response'),
+                    "model_used": result.get('model_used'),
+                    "query_type": query_type,
+                    "success": True
+                })
+            else:
+                # Return error from API
+                return jsonify({"error": result.get('error')}), 500
     except Exception as e:
         logger.error(f"Error processing query: {str(e)}")
         return jsonify({"error": str(e)}), 500
