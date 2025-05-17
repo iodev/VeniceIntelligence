@@ -126,6 +126,10 @@ def stream_chat(query, system_prompt):
     """Stream chat responses to the client"""
     def generate():
         try:
+            if agent is None:
+                yield 'data: {"error": "Agent is not initialized", "type": "error"}\n\n'
+                return
+                
             # First, get the relevant context from memory
             memories = agent.memory_manager.get_relevant_memories(query)
             context = agent._create_context_from_memories(memories)
@@ -134,7 +138,7 @@ def stream_chat(query, system_prompt):
             messages = agent._construct_prompt(query, system_prompt, context)
             
             # Select a model (use the default for now)
-            model = agent._get_best_model()
+            model = agent.current_model  # Use current model instead of _get_best_model
             
             # Start the generation with streaming
             stream_iterator = agent.venice_client.generate(

@@ -1,442 +1,328 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
+
+{% block title %}Cost Monitor{% endblock %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <h1 class="display-5 mb-3">Cost & Efficiency Monitor</h1>
-        <p class="lead">Track costs, efficiency, and optimize model selection across different AI platforms</p>
-    </div>
-</div>
-
-<!-- Daily Budget & Cost Summary Card -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header bg-primary text-white">
-                <h5 class="card-title mb-0">Daily Budget & Usage</h5>
-            </div>
-            <div class="card-body">
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <h6>Budget Status</h6>
-                        <div class="progress mb-2" style="height: 25px;">
-                            <div class="progress-bar {% if cost_summary.budget_percent < 60 %}bg-success{% elif cost_summary.budget_percent < 85 %}bg-warning{% else %}bg-danger{% endif %}" 
-                                 role="progressbar" 
-                                 style="width: {{ cost_summary.budget_percent }}%;" 
-                                 aria-valuenow="{{ cost_summary.budget_percent }}" 
-                                 aria-valuemin="0" 
-                                 aria-valuemax="100">
-                                ${{ "%.2f"|format(cost_summary.current_spending) }} / ${{ "%.2f"|format(cost_summary.daily_budget) }}
+<div class="container mt-4">
+    <h1>AI Cost Monitoring & Optimization</h1>
+    
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Cost Usage Summary</h5>
+                </div>
+                <div class="card-body">
+                    {% if cost_summary and cost_summary.daily_spend is defined %}
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Daily Usage</h6>
+                            <p class="h4 text-primary">${{ cost_summary.daily_spend|round(3) }}</p>
+                            <p class="text-muted">Of ${{ cost_summary.daily_budget|round(2) }} budget</p>
+                            
+                            <div class="progress mb-3">
+                                {% set percent = (cost_summary.daily_spend / cost_summary.daily_budget * 100)|round(0) %}
+                                <div class="progress-bar {% if percent > 90 %}bg-danger{% elif percent > 70 %}bg-warning{% else %}bg-success{% endif %}" 
+                                     role="progressbar" style="width: {{ percent }}%" 
+                                     aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100">
+                                    {{ percent }}%
+                                </div>
                             </div>
                         </div>
-                        <p class="small text-muted">
-                            {% if cost_summary.budget_percent >= strategy.cost_threshold * 100 %}
-                                <span class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> Cost-saving measures active</span>
-                            {% else %}
-                                <span class="text-success"><i class="bi bi-check-circle-fill"></i> Budget usage normal</span>
-                            {% endif %}
-                        </p>
+                        <div class="col-md-6">
+                            <h6>Total Usage</h6>
+                            <p class="h4 text-primary">${{ cost_summary.total_spend|round(2) }}</p>
+                            
+                            <h6 class="mt-3">Request Count</h6>
+                            <p>{{ cost_summary.request_count }} requests</p>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <h6>Budget Settings</h6>
-                        <form method="post" action="/admin/update-budget">
-                            <div class="input-group mb-3">
-                                <span class="input-group-text">$</span>
-                                <input type="number" class="form-control" name="daily_budget" value="{{ strategy.daily_budget }}" step="0.01" min="0.01">
-                                <button class="btn btn-outline-primary" type="submit">Update Budget</button>
+                    
+                    <hr>
+                    
+                    <h6>Cost by Provider</h6>
+                    <div class="mt-3">
+                        {% if cost_summary.provider_costs %}
+                            {% for provider, amount in cost_summary.provider_costs.items() %}
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>{{ provider|title }}</span>
+                                <span>${{ amount|round(3) }}</span>
                             </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted">No provider costs recorded yet</p>
+                        {% endif %}
+                    </div>
+                    
+                    <h6 class="mt-3">Cost by Request Type</h6>
+                    <div class="mt-3">
+                        {% if cost_summary.request_type_costs %}
+                            {% for type, amount in cost_summary.request_type_costs.items() %}
+                            <div class="d-flex justify-content-between mb-1">
+                                <span>{{ type|title }}</span>
+                                <span>${{ amount|round(3) }}</span>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted">No request type costs recorded yet</p>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No cost data available yet. Start using the system to track costs.</p>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="card shadow-sm mt-3">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Update Daily Budget</h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('update_budget') }}" method="POST">
+                        <div class="form-group">
+                            <label for="daily_budget">Daily Budget (USD)</label>
+                            <div class="input-group mb-3">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text">$</span>
+                                </div>
+                                <input type="number" class="form-control" id="daily_budget" name="daily_budget" 
+                                       step="0.01" min="0.01" value="{{ strategy.daily_budget if strategy else 1.0 }}">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success">Update Budget</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Model Selection Strategy</h5>
+                </div>
+                <div class="card-body">
+                    {% if strategy %}
+                    <h6>{{ strategy.name }}</h6>
+                    <p class="text-muted">{{ strategy.description }}</p>
+                    
+                    <h6 class="mt-3">Priority Weights</h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center mb-2">Cost</div>
+                            <div class="progress mb-3" style="height: 20px;">
+                                <div class="progress-bar bg-success" role="progressbar" 
+                                     style="width: {{ strategy.prioritize_cost * 100 }}%" 
+                                     aria-valuenow="{{ strategy.prioritize_cost * 100 }}" 
+                                     aria-valuemin="0" aria-valuemax="100">
+                                    {{ (strategy.prioritize_cost * 100)|round(0) }}%
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center mb-2">Speed</div>
+                            <div class="progress mb-3" style="height: 20px;">
+                                <div class="progress-bar bg-primary" role="progressbar" 
+                                     style="width: {{ strategy.prioritize_speed * 100 }}%" 
+                                     aria-valuenow="{{ strategy.prioritize_speed * 100 }}" 
+                                     aria-valuemin="0" aria-valuemax="100">
+                                    {{ (strategy.prioritize_speed * 100)|round(0) }}%
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center mb-2">Accuracy</div>
+                            <div class="progress mb-3" style="height: 20px;">
+                                <div class="progress-bar bg-info" role="progressbar" 
+                                     style="width: {{ strategy.prioritize_accuracy * 100 }}%" 
+                                     aria-valuenow="{{ strategy.prioritize_accuracy * 100 }}" 
+                                     aria-valuemin="0" aria-valuemax="100">
+                                    {{ (strategy.prioritize_accuracy * 100)|round(0) }}%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h6 class="mt-3">Cost Saving Threshold</h6>
+                    <p>System will switch to cost-saving mode at {{ (strategy.cost_threshold * 100)|round(0) }}% of daily budget</p>
+                    
+                    <h6 class="mt-3">Fallback Model</h6>
+                    <p>{{ strategy.fallback_model }}</p>
+                    
+                    <a class="btn btn-info btn-sm mt-2" data-toggle="collapse" href="#updateStrategyForm" role="button">
+                        Update Strategy
+                    </a>
+                    {% else %}
+                    <p class="text-muted">No strategy configured. Set up a new strategy below.</p>
+                    <a class="btn btn-info btn-sm" data-toggle="collapse" href="#updateStrategyForm" role="button">
+                        Configure Strategy
+                    </a>
+                    {% endif %}
+                    
+                    <div class="collapse mt-3" id="updateStrategyForm">
+                        <form action="{{ url_for('update_strategy') }}" method="POST">
+                            <div class="form-group">
+                                <label for="name">Strategy Name</label>
+                                <input type="text" class="form-control" id="name" name="name" 
+                                       value="{{ strategy.name if strategy else 'Balanced Strategy' }}">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="description">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="2">{{ strategy.description if strategy else 'Balance between cost, speed, and accuracy' }}</textarea>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group col-md-4">
+                                    <label for="prioritize_cost">Cost Weight</label>
+                                    <input type="number" class="form-control" id="prioritize_cost" name="prioritize_cost" 
+                                           step="0.1" min="0" max="1" value="{{ strategy.prioritize_cost if strategy else 0.3 }}">
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label for="prioritize_speed">Speed Weight</label>
+                                    <input type="number" class="form-control" id="prioritize_speed" name="prioritize_speed" 
+                                           step="0.1" min="0" max="1" value="{{ strategy.prioritize_speed if strategy else 0.3 }}">
+                                </div>
+                                <div class="form-group col-md-4">
+                                    <label for="prioritize_accuracy">Accuracy Weight</label>
+                                    <input type="number" class="form-control" id="prioritize_accuracy" name="prioritize_accuracy" 
+                                           step="0.1" min="0" max="1" value="{{ strategy.prioritize_accuracy if strategy else 0.4 }}">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="cost_threshold">Cost Threshold (0-1)</label>
+                                <input type="number" class="form-control" id="cost_threshold" name="cost_threshold" 
+                                       step="0.1" min="0" max="1" value="{{ strategy.cost_threshold if strategy else 0.8 }}">
+                                <small class="form-text text-muted">Fraction of daily budget before switching to cost-saving mode</small>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="fallback_model">Fallback Model</label>
+                                <input type="text" class="form-control" id="fallback_model" name="fallback_model" 
+                                       value="{{ strategy.fallback_model if strategy else 'llama-3.2-3b' }}">
+                                <small class="form-text text-muted">Low-cost model to use when budget is nearly exhausted</small>
+                            </div>
+                            
+                            <hr>
+                            <h6>Task-Model Mappings</h6>
+                            
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0">Text Tasks</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-row">
+                                        <div class="form-group col-md-4">
+                                            <label for="text_mapping_general">General</label>
+                                            <input type="text" class="form-control" id="text_mapping_general" name="text_mapping_general" 
+                                                   value="llama-3.1-sonar-small-128k-online">
+                                        </div>
+                                        <div class="form-group col-md-4">
+                                            <label for="text_mapping_creative">Creative</label>
+                                            <input type="text" class="form-control" id="text_mapping_creative" name="text_mapping_creative" 
+                                                   value="claude-3.5-sonnet-20241022">
+                                        </div>
+                                        <div class="form-group col-md-4">
+                                            <label for="text_mapping_analytical">Analytical</label>
+                                            <input type="text" class="form-control" id="text_mapping_analytical" name="text_mapping_analytical" 
+                                                   value="mistral-31-24b">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0">Code Tasks</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-row">
+                                        <div class="form-group col-md-4">
+                                            <label for="code_mapping_general">General</label>
+                                            <input type="text" class="form-control" id="code_mapping_general" name="code_mapping_general" 
+                                                   value="mistral-31-24b">
+                                        </div>
+                                        <div class="form-group col-md-4">
+                                            <label for="code_mapping_python">Python</label>
+                                            <input type="text" class="form-control" id="code_mapping_python" name="code_mapping_python" 
+                                                   value="mistral-31-24b">
+                                        </div>
+                                        <div class="form-group col-md-4">
+                                            <label for="code_mapping_javascript">JavaScript</label>
+                                            <input type="text" class="form-control" id="code_mapping_javascript" name="code_mapping_javascript" 
+                                                   value="llama-3.2-3b">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0">Image Tasks</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-group">
+                                        <label for="image_mapping_general">General</label>
+                                        <input type="text" class="form-control" id="image_mapping_general" name="image_mapping_general" 
+                                               value="stable-diffusion-xl-1024-v1-0">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary">Update Strategy</button>
                         </form>
                     </div>
                 </div>
-                
-                <!-- Provider Cost Breakdown -->
-                <h6>Cost by Provider</h6>
-                <div class="row mb-3">
-                    {% for provider, data in cost_summary.by_provider.items() %}
-                    <div class="col-md-3 mb-3">
-                        <div class="card h-100">
-                            <div class="card-body p-3">
-                                <h6 class="card-title">{{ provider|capitalize }}</h6>
-                                <div class="d-flex justify-content-between">
-                                    <span>Cost:</span>
-                                    <span>${{ "%.4f"|format(data.cost) }}</span>
-                                </div>
-                                <div class="d-flex justify-content-between">
-                                    <span>Tokens:</span>
-                                    <span>{{ data.tokens|default(0)|int }}</span>
-                                </div>
-                                <div class="d-flex justify-content-between">
-                                    <span>Requests:</span>
-                                    <span>{{ data.requests|default(0)|int }}</span>
-                                </div>
-                            </div>
-                        </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0">Model Efficiency Metrics</h5>
+                </div>
+                <div class="card-body">
+                    {% if efficiency_metrics %}
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Provider</th>
+                                    <th>Task Type</th>
+                                    <th>Response Time (s)</th>
+                                    <th>Tokens/Second</th>
+                                    <th>Cost/100 Tokens</th>
+                                    <th>Accuracy</th>
+                                    <th>User Satisfaction</th>
+                                    <th>Efficiency Score</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for metric in efficiency_metrics %}
+                                <tr>
+                                    <td>{{ metric.model_id }}</td>
+                                    <td>{{ metric.provider }}</td>
+                                    <td>{{ metric.task_type }}</td>
+                                    <td>{{ metric.avg_time_to_first_token|round(3) }}</td>
+                                    <td>{{ metric.avg_tokens_per_second|round(1) }}</td>
+                                    <td>${{ metric.avg_cost_per_100_tokens|round(4) }}</td>
+                                    <td>{{ (metric.accuracy_score * 100)|round(1) }}%</td>
+                                    <td>{{ (metric.user_satisfaction * 100)|round(1) }}%</td>
+                                    <td>{{ metric.efficiency_score|round(2) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
-                    {% endfor %}
+                    {% else %}
+                    <p class="text-muted">No efficiency metrics available yet. The system will collect metrics as you use different models.</p>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 </div>
-
-<!-- Model Efficiency Metrics -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Model Efficiency Metrics</h5>
-            </div>
-            <div class="card-body">
-                <div class="table-responsive">
-                    <table class="table table-hover table-striped">
-                        <thead>
-                            <tr>
-                                <th>Model</th>
-                                <th>Provider</th>
-                                <th>Task Type</th>
-                                <th>Response Time</th>
-                                <th>Tokens/Second</th>
-                                <th>Cost/100 Tokens</th>
-                                <th>Accuracy</th>
-                                <th>User Rating</th>
-                                <th>Efficiency Score</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for metric in efficiency_metrics %}
-                            <tr>
-                                <td><code>{{ metric.model_id }}</code></td>
-                                <td>{{ metric.provider }}</td>
-                                <td>{{ metric.task_type }}</td>
-                                <td>{{ "%.2f"|format(metric.avg_time_to_first_token) }}s</td>
-                                <td>{{ "%.1f"|format(metric.avg_tokens_per_second) }}</td>
-                                <td>${{ "%.4f"|format(metric.avg_cost_per_100_tokens) }}</td>
-                                <td>
-                                    <div class="progress" style="height: 15px;">
-                                        <div class="progress-bar bg-info" role="progressbar" style="width: {{ metric.accuracy_score * 100 }}%;" aria-valuenow="{{ metric.accuracy_score * 100 }}" aria-valuemin="0" aria-valuemax="100">{{ "%.0f"|format(metric.accuracy_score * 100) }}%</div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="progress" style="height: 15px;">
-                                        <div class="progress-bar bg-warning" role="progressbar" style="width: {{ metric.user_satisfaction * 100 }}%;" aria-valuenow="{{ metric.user_satisfaction * 100 }}" aria-valuemin="0" aria-valuemax="100">{{ "%.0f"|format(metric.user_satisfaction * 100) }}%</div>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div class="progress" style="height: 15px;">
-                                        <div class="progress-bar {% if metric.efficiency_score > 0.8 %}bg-success{% elif metric.efficiency_score > 0.5 %}bg-primary{% else %}bg-secondary{% endif %}" role="progressbar" style="width: {{ metric.efficiency_score * 100 }}%;" aria-valuenow="{{ metric.efficiency_score * 100 }}" aria-valuemin="0" aria-valuemax="100">{{ "%.0f"|format(metric.efficiency_score * 100) }}%</div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Model Selection Strategy -->
-<div class="row mb-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Adaptive Model Selection Strategy</h5>
-            </div>
-            <div class="card-body">
-                <form method="post" action="/admin/update-strategy">
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <div class="form-group mb-3">
-                                <label for="strategyName">Strategy Name</label>
-                                <input type="text" class="form-control" id="strategyName" name="name" value="{{ strategy.name }}">
-                            </div>
-                            <div class="form-group mb-3">
-                                <label for="strategyDesc">Description</label>
-                                <textarea class="form-control" id="strategyDesc" name="description" rows="3">{{ strategy.description }}</textarea>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <h6>Optimization Priorities</h6>
-                            <div class="form-group mb-3">
-                                <label for="costPriority">Cost Efficiency</label>
-                                <input type="range" class="form-range" id="costPriority" name="prioritize_cost" min="0" max="1" step="0.1" value="{{ strategy.prioritize_cost }}">
-                                <div class="d-flex justify-content-between">
-                                    <span class="small">Low Priority</span>
-                                    <span class="small text-center">{{ "%.1f"|format(strategy.prioritize_cost) }}</span>
-                                    <span class="small">High Priority</span>
-                                </div>
-                            </div>
-                            <div class="form-group mb-3">
-                                <label for="speedPriority">Speed</label>
-                                <input type="range" class="form-range" id="speedPriority" name="prioritize_speed" min="0" max="1" step="0.1" value="{{ strategy.prioritize_speed }}">
-                                <div class="d-flex justify-content-between">
-                                    <span class="small">Low Priority</span>
-                                    <span class="small text-center">{{ "%.1f"|format(strategy.prioritize_speed) }}</span>
-                                    <span class="small">High Priority</span>
-                                </div>
-                            </div>
-                            <div class="form-group mb-3">
-                                <label for="accuracyPriority">Accuracy & Quality</label>
-                                <input type="range" class="form-range" id="accuracyPriority" name="prioritize_accuracy" min="0" max="1" step="0.1" value="{{ strategy.prioritize_accuracy }}">
-                                <div class="d-flex justify-content-between">
-                                    <span class="small">Low Priority</span>
-                                    <span class="small text-center">{{ "%.1f"|format(strategy.prioritize_accuracy) }}</span>
-                                    <span class="small">High Priority</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-12">
-                            <h6>Task Type Model Mapping</h6>
-                        </div>
-                    </div>
-                    
-                    <!-- Text Task Mappings -->
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <div class="card h-100">
-                                <div class="card-header py-2">
-                                    <h6 class="mb-0">Text Generation</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-2">
-                                        <label for="textGeneral">General Text</label>
-                                        <select class="form-select form-select-sm" id="textGeneral" name="text_mapping_general">
-                                            <option value="llama-3.1-sonar-small-128k-online" {% if strategy.text_task_mapping.general == "llama-3.1-sonar-small-128k-online" %}selected{% endif %}>Perplexity Llama 3.1 Small</option>
-                                            <option value="mistral-31-24b" {% if strategy.text_task_mapping.general == "mistral-31-24b" %}selected{% endif %}>Venice Mistral 31B</option>
-                                            <option value="claude-3.5-sonnet-20241022" {% if strategy.text_task_mapping.general == "claude-3.5-sonnet-20241022" %}selected{% endif %}>Anthropic Claude 3.5</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="textCreative">Creative Writing</label>
-                                        <select class="form-select form-select-sm" id="textCreative" name="text_mapping_creative">
-                                            <option value="claude-3.5-sonnet-20241022" {% if strategy.text_task_mapping.creative == "claude-3.5-sonnet-20241022" %}selected{% endif %}>Anthropic Claude 3.5</option>
-                                            <option value="llama-3.1-sonar-large-128k-online" {% if strategy.text_task_mapping.creative == "llama-3.1-sonar-large-128k-online" %}selected{% endif %}>Perplexity Llama 3.1 Large</option>
-                                            <option value="mistral-31-24b" {% if strategy.text_task_mapping.creative == "mistral-31-24b" %}selected{% endif %}>Venice Mistral 31B</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="textAnalytical">Analytical Reasoning</label>
-                                        <select class="form-select form-select-sm" id="textAnalytical" name="text_mapping_analytical">
-                                            <option value="mistral-31-24b" {% if strategy.text_task_mapping.analytical == "mistral-31-24b" %}selected{% endif %}>Venice Mistral 31B</option>
-                                            <option value="claude-3.5-sonnet-20241022" {% if strategy.text_task_mapping.analytical == "claude-3.5-sonnet-20241022" %}selected{% endif %}>Anthropic Claude 3.5</option>
-                                            <option value="llama-3.1-sonar-large-128k-online" {% if strategy.text_task_mapping.analytical == "llama-3.1-sonar-large-128k-online" %}selected{% endif %}>Perplexity Llama 3.1 Large</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Code Task Mappings -->
-                        <div class="col-md-4">
-                            <div class="card h-100">
-                                <div class="card-header py-2">
-                                    <h6 class="mb-0">Code Generation</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-2">
-                                        <label for="codeGeneral">General Code</label>
-                                        <select class="form-select form-select-sm" id="codeGeneral" name="code_mapping_general">
-                                            <option value="mistral-31-24b" {% if strategy.code_task_mapping.general == "mistral-31-24b" %}selected{% endif %}>Venice Mistral 31B</option>
-                                            <option value="llama-3.1-sonar-large-128k-online" {% if strategy.code_task_mapping.general == "llama-3.1-sonar-large-128k-online" %}selected{% endif %}>Perplexity Llama 3.1 Large</option>
-                                            <option value="claude-3.5-sonnet-20241022" {% if strategy.code_task_mapping.general == "claude-3.5-sonnet-20241022" %}selected{% endif %}>Anthropic Claude 3.5</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="codePython">Python</label>
-                                        <select class="form-select form-select-sm" id="codePython" name="code_mapping_python">
-                                            <option value="mistral-31-24b" {% if strategy.code_task_mapping.python == "mistral-31-24b" %}selected{% endif %}>Venice Mistral 31B</option>
-                                            <option value="llama-3.2-3b" {% if strategy.code_task_mapping.python == "llama-3.2-3b" %}selected{% endif %}>Venice Llama 3.2 3B</option>
-                                            <option value="claude-3.5-sonnet-20241022" {% if strategy.code_task_mapping.python == "claude-3.5-sonnet-20241022" %}selected{% endif %}>Anthropic Claude 3.5</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="codeJS">JavaScript</label>
-                                        <select class="form-select form-select-sm" id="codeJS" name="code_mapping_javascript">
-                                            <option value="llama-3.2-3b" {% if strategy.code_task_mapping.javascript == "llama-3.2-3b" %}selected{% endif %}>Venice Llama 3.2 3B</option>
-                                            <option value="mistral-31-24b" {% if strategy.code_task_mapping.javascript == "mistral-31-24b" %}selected{% endif %}>Venice Mistral 31B</option>
-                                            <option value="claude-3.5-sonnet-20241022" {% if strategy.code_task_mapping.javascript == "claude-3.5-sonnet-20241022" %}selected{% endif %}>Anthropic Claude 3.5</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Image Task Mappings -->
-                        <div class="col-md-4">
-                            <div class="card h-100">
-                                <div class="card-header py-2">
-                                    <h6 class="mb-0">Image Generation</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-2">
-                                        <label for="imageGeneral">General Images</label>
-                                        <select class="form-select form-select-sm" id="imageGeneral" name="image_mapping_general">
-                                            <option value="stable-diffusion-xl-1024-v1-0" {% if strategy.image_task_mapping.general == "stable-diffusion-xl-1024-v1-0" %}selected{% endif %}>Stable Diffusion XL</option>
-                                        </select>
-                                    </div>
-                                    <div class="mb-3 mt-4">
-                                        <label for="costThreshold">Budget Threshold for Cost-Saving Mode</label>
-                                        <input type="range" class="form-range" id="costThreshold" name="cost_threshold" min="0.5" max="1" step="0.05" value="{{ strategy.cost_threshold }}">
-                                        <div class="d-flex justify-content-between">
-                                            <span class="small">50%</span>
-                                            <span class="small text-center">{{ "%.0f"|format(strategy.cost_threshold * 100) }}%</span>
-                                            <span class="small">100%</span>
-                                        </div>
-                                        <small class="text-muted">When spending reaches this percentage of daily budget, cost-saving measures will activate.</small>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label for="fallbackModel">Low-Cost Fallback Model</label>
-                                        <select class="form-select form-select-sm" id="fallbackModel" name="fallback_model">
-                                            <option value="llama-3.2-3b" {% if strategy.fallback_model == "llama-3.2-3b" %}selected{% endif %}>Venice Llama 3.2 3B</option>
-                                            <option value="llama-3.1-sonar-small-128k-online" {% if strategy.fallback_model == "llama-3.1-sonar-small-128k-online" %}selected{% endif %}>Perplexity Llama Small</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="text-center">
-                        <button type="submit" class="btn btn-primary">Update Strategy</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Usage Charts -->
-<div class="row mb-4">
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Token Usage by Model</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="tokenUsageChart" width="400" height="300"></canvas>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-6">
-        <div class="card h-100">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Cost Distribution by Provider</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="costDistributionChart" width="400" height="300"></canvas>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Model Usage Chart
-    var tokenCtx = document.getElementById('tokenUsageChart').getContext('2d');
-    var modelData = {
-        labels: [
-            {% for model_id, data in cost_summary.by_model.items() %}
-                "{{ model_id }}",
-            {% endfor %}
-        ],
-        datasets: [{
-            label: 'Token Usage',
-            data: [
-                {% for model_id, data in cost_summary.by_model.items() %}
-                    {{ data.tokens|default(0)|int }},
-                {% endfor %}
-            ],
-            backgroundColor: [
-                'rgba(75, 192, 192, 0.2)',
-                'rgba(54, 162, 235, 0.2)',
-                'rgba(153, 102, 255, 0.2)',
-                'rgba(255, 206, 86, 0.2)',
-                'rgba(255, 99, 132, 0.2)'
-            ],
-            borderColor: [
-                'rgba(75, 192, 192, 1)',
-                'rgba(54, 162, 235, 1)',
-                'rgba(153, 102, 255, 1)',
-                'rgba(255, 206, 86, 1)',
-                'rgba(255, 99, 132, 1)'
-            ],
-            borderWidth: 1
-        }]
-    };
-    
-    var tokenChart = new Chart(tokenCtx, {
-        type: 'bar',
-        data: modelData,
-        options: {
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Number of Tokens'
-                    }
-                }
-            }
-        }
-    });
-    
-    // Cost Distribution Chart
-    var costCtx = document.getElementById('costDistributionChart').getContext('2d');
-    var costData = {
-        labels: [
-            {% for provider, data in cost_summary.by_provider.items() %}
-                "{{ provider|capitalize }}",
-            {% endfor %}
-        ],
-        datasets: [{
-            label: 'Cost (USD)',
-            data: [
-                {% for provider, data in cost_summary.by_provider.items() %}
-                    {{ data.cost|default(0) }},
-                {% endfor %}
-            ],
-            backgroundColor: [
-                'rgba(255, 99, 132, 0.2)',
-                'rgba(54, 162, 235, 0.2)',
-                'rgba(255, 206, 86, 0.2)',
-                'rgba(75, 192, 192, 0.2)',
-            ],
-            borderColor: [
-                'rgba(255, 99, 132, 1)',
-                'rgba(54, 162, 235, 1)',
-                'rgba(255, 206, 86, 1)',
-                'rgba(75, 192, 192, 1)',
-            ],
-            borderWidth: 1
-        }]
-    };
-    
-    var costChart = new Chart(costCtx, {
-        type: 'pie',
-        data: costData,
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    position: 'right',
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return context.label + ': $' + context.raw.toFixed(4);
-                        }
-                    }
-                }
-            }
-        }
-    });
-});
-</script>
 {% endblock %}

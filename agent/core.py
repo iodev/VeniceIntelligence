@@ -221,31 +221,49 @@ class Agent:
     
     def _select_model_for_evaluation(self) -> str:
         """
-        Select a model for evaluation based on usage patterns
+        Select a model for evaluation using a round-robin approach
+        
+        This ensures all models get evaluated fairly over time, with
+        priority given to models with fewer evaluations.
         
         Returns:
             Model ID to evaluate
         """
-        # Find least recently used model
-        least_used = None
-        min_calls = float('inf')
+        from models import ModelPerformance
+        from app import db
         
-        for model, perf in self.model_performance.items():
-            if perf["total_calls"] < min_calls:
-                min_calls = perf["total_calls"]
-                least_used = model
+        # Get all models with their total calls from the database
+        model_calls = {}
         
-        # If there's a model with fewer calls, use it
-        if least_used and least_used != self.current_model:
-            return least_used
+        # Check the database for model performance records
+        models = ModelPerformance.query.all()
+        for model in models:
+            model_calls[model.model_id] = model.total_calls
         
-        # Otherwise, randomly select a model that's not the current one
-        import random
-        candidates = [m for m in self.available_models if m != self.current_model]
+        # Add any available models that aren't in the database yet
+        for model_id in self.available_models:
+            if model_id not in model_calls:
+                model_calls[model_id] = 0
+        
+        # Sort models by call count (ascending)
+        sorted_models = sorted(model_calls.items(), key=lambda x: x[1])
+        
+        # Filter out the current model to avoid evaluating it
+        candidates = [model for model, _ in sorted_models if model != self.current_model]
+        
+        # If there are candidates, return the one with the fewest calls
         if candidates:
-            return random.choice(candidates)
+            return candidates[0]
+        
+        # If all models have been evaluated or there's only one model,
+        # return a random model that's not the current one
+        import random
+        all_candidates = [m for m in self.available_models if m != self.current_model]
+        if all_candidates:
+            return random.choice(all_candidates)
         
         # If all else fails, return the current model
+        logger.warning("No alternative models available for evaluation")
         return self.current_model
     
     def _get_best_model(self) -> str:
