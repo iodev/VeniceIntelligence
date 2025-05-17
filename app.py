@@ -230,6 +230,78 @@ def reset_memory():
     except Exception as e:
         logger.error(f"Error resetting memory: {str(e)}")
         return jsonify({"error": str(e)}), 500
+        
+@app.route('/api/manage_models', methods=['POST'])
+def manage_models():
+    """Endpoint to manage models (refresh, deprecate, restore)"""
+    if agent is None or agent_api is None:
+        return jsonify({"error": "Agent is not initialized"}), 500
+    
+    try:
+        action = request.json.get('action')
+        
+        if action == 'refresh':
+            # Refresh available models from all providers
+            result = agent_api.get_available_models()
+            return jsonify({
+                "success": True,
+                "message": "Models refreshed successfully",
+                "data": result
+            })
+            
+        elif action == 'deprecate':
+            # Mark a specific model as deprecated
+            provider = request.json.get('provider')
+            model_id = request.json.get('model_id')
+            
+            if not provider or not model_id:
+                return jsonify({"error": "Provider and model ID are required"}), 400
+            
+            # Update model availability in database
+            model = ModelPerformance.query.filter_by(
+                provider=provider,
+                model_id=model_id
+            ).first()
+            
+            if model:
+                model.is_available = False
+                db.session.commit()
+                return jsonify({
+                    "success": True,
+                    "message": f"Model {provider}:{model_id} marked as deprecated"
+                })
+            else:
+                return jsonify({"error": f"Model {provider}:{model_id} not found"}), 404
+                
+        elif action == 'restore':
+            # Restore a deprecated model
+            provider = request.json.get('provider')
+            model_id = request.json.get('model_id')
+            
+            if not provider or not model_id:
+                return jsonify({"error": "Provider and model ID are required"}), 400
+            
+            # Update model availability in database
+            model = ModelPerformance.query.filter_by(
+                provider=provider,
+                model_id=model_id
+            ).first()
+            
+            if model:
+                model.is_available = True
+                db.session.commit()
+                return jsonify({
+                    "success": True,
+                    "message": f"Model {provider}:{model_id} restored"
+                })
+            else:
+                return jsonify({"error": f"Model {provider}:{model_id} not found"}), 404
+        else:
+            return jsonify({"error": f"Unknown action: {action}"}), 400
+            
+    except Exception as e:
+        logger.error(f"Error managing models: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.errorhandler(404)
 def page_not_found(e):
