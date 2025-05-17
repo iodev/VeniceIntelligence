@@ -435,15 +435,15 @@ def get_image_models():
 @app.route('/cost-monitor')
 def cost_monitor_page():
     """Cost monitoring and optimization dashboard"""
-    if cost_monitor is None:
+    if agent is None or not hasattr(agent, 'cost_monitor') or agent.cost_monitor is None:
         flash("Cost monitoring is not initialized", "danger")
         return redirect(url_for('index'))
     
     try:
         # Get cost summary and efficiency metrics
-        cost_summary = cost_monitor.get_cost_summary()
-        efficiency_metrics = cost_monitor.get_efficiency_metrics()
-        strategy = cost_monitor.get_current_strategy()
+        cost_summary = agent.cost_monitor.get_cost_summary()
+        efficiency_metrics = agent.cost_monitor.get_efficiency_metrics()
+        strategy = agent.cost_monitor.get_current_strategy()
         
         # Ensure cost_summary has all required fields with default values
         if cost_summary is None:
@@ -495,7 +495,7 @@ def cost_monitor_page():
 @app.route('/admin/update-budget', methods=['POST'])
 def update_budget():
     """Update the daily budget for cost control"""
-    if cost_monitor is None:
+    if agent is None or not hasattr(agent, 'cost_monitor') or agent.cost_monitor is None:
         return jsonify({"error": "Cost monitoring is not initialized"}), 500
     
     try:
@@ -503,7 +503,7 @@ def update_budget():
         
         # Update strategy with new budget
         strategy_data = {"daily_budget": daily_budget}
-        success = cost_monitor.update_strategy(strategy_data)
+        success = agent.cost_monitor.update_strategy(strategy_data)
         
         if success:
             flash(f"Daily budget updated to ${daily_budget:.2f}", "success")
@@ -519,7 +519,7 @@ def update_budget():
 @app.route('/admin/update-strategy', methods=['POST'])
 def update_strategy():
     """Update the model selection strategy"""
-    if cost_monitor is None:
+    if agent is None or not hasattr(agent, 'cost_monitor') or agent.cost_monitor is None:
         return jsonify({"error": "Cost monitoring is not initialized"}), 500
     
     try:
