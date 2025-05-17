@@ -1,4 +1,5 @@
 import logging
+import random
 import time
 from typing import Dict, List, Tuple, Optional, Any
 from agent.memory import MemoryManager
@@ -164,6 +165,10 @@ class Agent:
         
         # Interaction counter for model evaluation
         self.interaction_count = 0
+        
+        # Initialize model performance tracking
+        self.model_performance = {}
+        
         logger.info(f"Agent initialized with current model: {self.current_model}")
     
     def process_query(self, query: str, system_prompt: Optional[str] = None, query_type: str = "text") -> Tuple[str, str]:

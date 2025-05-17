@@ -285,7 +285,7 @@ class MemoryManager:
             logger.error(f"Error getting recent interactions: {str(e)}")
             return []
     
-    def clear_memory(self) -> bool:
+    def clear_memories(self) -> bool:
         """
         Clear all stored memories
         
