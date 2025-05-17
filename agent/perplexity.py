@@ -50,6 +50,41 @@ class PerplexityClient:
             return False
             
         try:
+            # Use a simple query to test the connection
+            test_messages = [
+                {"role": "system", "content": "Be precise and concise."},
+                {"role": "user", "content": "Hi"}
+            ]
+            
+            # Make a lightweight request to test connection
+            url = f"{self.base_url}/chat/completions"
+            payload = {
+                "model": "llama-3.1-sonar-small-128k-online",
+                "messages": test_messages,
+                "max_tokens": 5,  # Minimal tokens to reduce cost
+                "temperature": 0.1,
+                "stream": False
+            }
+            
+            response = requests.post(
+                url, 
+                headers=self.headers,
+                json=payload,
+                timeout=5  # Short timeout for quick failure
+            )
+            
+            if response.status_code == 200:
+                logger.info("Successfully connected to Perplexity API")
+                return True
+            else:
+                logger.warning(f"Perplexity API test failed: {response.status_code}, {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error testing Perplexity API connection: {str(e)}")
+            return False
+            
+        try:
             # Simple query to test if the API key is valid
             response = self.generate(
                 messages=[

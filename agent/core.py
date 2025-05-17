@@ -76,6 +76,13 @@ class Agent:
         """
         # Set the default system prompt
         self.default_system_prompt = default_system_prompt
+        
+        # Initialize provider status tracking
+        self._provider_status = {
+            "venice": True,  # Venice is always available as our primary provider
+            "anthropic": False,  # Set to False by default until tested
+            "perplexity": False  # Set to False by default until tested
+        }
         from models import ModelPerformance
         from main import db
         from agent.cost_control import CostMonitor
@@ -200,27 +207,58 @@ class Agent:
                 
             # Default to Venice for all other models
             return "venice"
+            
+        # Track provider availability
+        self._update_provider_status()
         
         # Determine which provider to use based on the model
         provider = get_provider_for_model(model_to_use)
+        
+        # Check if selected provider is available, otherwise use Venice
+        if (provider == "anthropic" and not self._provider_status.get("anthropic", False)) or \
+           (provider == "perplexity" and not self._provider_status.get("perplexity", False)):
+            logger.warning(f"Provider {provider} is unavailable, using Venice instead")
+            provider = "venice"
+            model_to_use = self.current_model
         
         # Call the appropriate model based on provider
         start_time = time.time()
         try:
             if provider == "venice":
+                # Always prioritize Venice API as it's the most reliable
                 response_data = self.venice_client.generate(messages, model=model_to_use)
                 response = response_data
                 success = True
-            elif provider == "anthropic" and hasattr(self, 'anthropic_client') and self.anthropic_client:
-                response_data = self.anthropic_client.generate(messages, model=model_to_use)
-                response = response_data.get('content', [])[0].get('text', "")
-                success = True
-            elif provider == "perplexity" and hasattr(self, 'perplexity_client') and self.perplexity_client:
-                response_data = self.perplexity_client.generate(messages, model=model_to_use)
-                response = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
-                success = True
+            elif provider == "anthropic" and hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False):
+                try:
+                    response_data = self.anthropic_client.generate(messages, model=model_to_use)
+                    response = response_data.get('content', [])[0].get('text', "")
+                    success = True
+                except Exception as e:
+                    # Mark Anthropic as unavailable and fall back to Venice
+                    logger.error(f"Error with Anthropic API, falling back to Venice: {str(e)}")
+                    self._provider_status["anthropic"] = False
+                    response_data = self.venice_client.generate(messages, model=self.current_model)
+                    response = response_data
+                    model_to_use = self.current_model
+                    provider = "venice"
+                    success = True
+            elif provider == "perplexity" and hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False):
+                try:
+                    response_data = self.perplexity_client.generate(messages, model=model_to_use)
+                    response = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
+                    success = True
+                except Exception as e:
+                    # Mark Perplexity as unavailable and fall back to Venice
+                    logger.error(f"Error with Perplexity API, falling back to Venice: {str(e)}")
+                    self._provider_status["perplexity"] = False
+                    response_data = self.venice_client.generate(messages, model=self.current_model)
+                    response = response_data
+                    model_to_use = self.current_model
+                    provider = "venice"
+                    success = True
             else:
-                # Default to Venice client
+                # Default to Venice client as the safest option
                 response = self.venice_client.generate(messages, model=self.current_model)
                 model_to_use = self.current_model
                 provider = "venice"
@@ -414,6 +452,66 @@ class Agent:
         logger.warning("No alternative models available for evaluation")
         return self.current_model
         
+    def _update_provider_status(self) -> None:
+        """
+        Check the status of different providers and update availability
+        
+        This method tests each provider to determine if it's currently
+        available or if it's hitting rate limits or returning errors.
+        """
+        # Venice is always our primary provider and considered available
+        self._provider_status["venice"] = True
+        
+        # Check Anthropic availability if we have a client
+        if hasattr(self, 'anthropic_client') and self.anthropic_client:
+            try:
+                # Test connection to see if Anthropic API is working
+                if hasattr(self.anthropic_client, 'test_connection'):
+                    self._provider_status["anthropic"] = self.anthropic_client.test_connection()
+                else:
+                    # If no test_connection method, use a simple test message
+                    test_message = [
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Hello"}
+                    ]
+                    try:
+                        self.anthropic_client.generate(test_message, max_tokens=10)
+                        self._provider_status["anthropic"] = True
+                    except Exception as e:
+                        logger.warning(f"Anthropic API test failed: {str(e)}")
+                        self._provider_status["anthropic"] = False
+            except Exception as e:
+                self._provider_status["anthropic"] = False
+                logger.warning(f"Anthropic API unavailable: {str(e)}")
+        else:
+            self._provider_status["anthropic"] = False
+            
+        # Check Perplexity availability if we have a client
+        if hasattr(self, 'perplexity_client') and self.perplexity_client:
+            try:
+                # Test connection to see if Perplexity API is working
+                if hasattr(self.perplexity_client, 'test_connection'):
+                    self._provider_status["perplexity"] = self.perplexity_client.test_connection()
+                else:
+                    # If no test_connection method, use a simple test message
+                    test_message = [
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": "Hello"}
+                    ]
+                    try:
+                        self.perplexity_client.generate(test_message, max_tokens=10)
+                        self._provider_status["perplexity"] = True
+                    except Exception as e:
+                        logger.warning(f"Perplexity API test failed: {str(e)}")
+                        self._provider_status["perplexity"] = False
+            except Exception as e:
+                self._provider_status["perplexity"] = False
+                logger.warning(f"Perplexity API unavailable: {str(e)}")
+        else:
+            self._provider_status["perplexity"] = False
+            
+        logger.info(f"Provider status: {self._provider_status}")
+
     def _get_best_performance_model(self) -> str:
         """
         Get the best performing model based on quality and success rate
