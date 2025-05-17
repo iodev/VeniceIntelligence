@@ -122,6 +122,7 @@ class Agent:
         self.cost_monitor = CostMonitor()
         
         # Try to initialize additional API clients if keys are available
+        # Initialize Perplexity client first as Anthropic can use it for model discovery
         try:
             self.perplexity_client = PerplexityClient()
             if self.perplexity_client.api_key:
@@ -133,8 +134,9 @@ class Agent:
             logger.warning(f"Failed to initialize Perplexity client: {str(e)}")
             self.perplexity_client = None
             
+        # Initialize Anthropic client with Perplexity for dynamic model lookup
         try:
-            self.anthropic_client = AnthropicClient()
+            self.anthropic_client = AnthropicClient(perplexity_client=self.perplexity_client)
             if self.anthropic_client.api_key:
                 logger.info("Anthropic API client initialized successfully")
             else:

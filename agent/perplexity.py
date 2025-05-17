@@ -327,7 +327,9 @@ class PerplexityClient:
                 except:
                     logger.error("Failed to parse JSON from Perplexity response")
                     logger.debug(f"Raw content: {content}")
-                    return []
+                    
+            # Return empty list as a fallback to prevent None return
+            return []
                     
         except Exception as e:
             logger.error(f"Error fetching Anthropic models from Perplexity: {str(e)}")
