@@ -7,6 +7,9 @@ from agent.core import Agent
 from agent.memory import MemoryManager
 from agent.models import VeniceClient
 from agent.image import VeniceImageClient
+from agent.perplexity import PerplexityClient
+from agent.anthropic_client import AnthropicClient
+from models import ModelPerformance
 import config
 
 # Set up logging

@@ -8,12 +8,17 @@ class ModelPerformance(db.Model):
     
     id = db.Column(Integer, primary_key=True)
     model_id = db.Column(String(100), nullable=False, index=True)
+    provider = db.Column(String(50), nullable=False, default="venice", index=True)
     total_calls = db.Column(Integer, default=0)
     successful_calls = db.Column(Integer, default=0)
     total_latency = db.Column(Float, default=0.0)
     quality_score = db.Column(Float, default=0.0)
     quality_evaluations = db.Column(Integer, default=0)
     is_current = db.Column(Boolean, default=False)
+    capabilities = db.Column(String(200), default="text", nullable=False)  # text, code, image, etc.
+    context_window = db.Column(Integer, default=8192)  # Token context window
+    cost_per_1k_tokens = db.Column(Float, default=0.0)  # Cost per 1k tokens in USD
+    display_name = db.Column(String(100))  # Human-readable name
     created_at = db.Column(DateTime, default=datetime.utcnow)
     updated_at = db.Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

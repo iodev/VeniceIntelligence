@@ -14,6 +14,14 @@ VENICE_API_BASE_URL = "https://api.venice.ai/api/v1"
 # OpenAI Configuration for Embeddings
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+# Perplexity API Configuration
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
+PERPLEXITY_API_BASE_URL = "https://api.perplexity.ai"
+
+# Anthropic API Configuration
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_BASE_URL = "https://api.anthropic.com/v1"
+
 # Qdrant Configuration
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
