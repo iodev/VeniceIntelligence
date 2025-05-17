@@ -22,6 +22,10 @@ PERPLEXITY_API_BASE_URL = "https://api.perplexity.ai"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_API_BASE_URL = "https://api.anthropic.com/v1"
 
+# Hugging Face API Configuration  
+HUGGINGFACE_API_KEY = os.getenv("HUGGING_FACE_API_KEY_IO", "")
+HUGGINGFACE_API_BASE_URL = "https://api-inference.huggingface.co/models"
+
 # Qdrant Configuration
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")

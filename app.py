@@ -9,6 +9,7 @@ from agent.models import VeniceClient
 from agent.image import VeniceImageClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
+from agent.huggingface_client import HuggingFaceClient
 from models import ModelPerformance
 import config
 
@@ -280,6 +281,7 @@ def admin():
         "venice": False,
         "perplexity": False,
         "anthropic": False,
+        "huggingface": False,
         "qdrant": False
     }
     
@@ -287,12 +289,14 @@ def admin():
         "venice": bool(config.VENICE_API_KEY),
         "perplexity": bool(config.PERPLEXITY_API_KEY),
         "anthropic": bool(config.ANTHROPIC_API_KEY),
+        "huggingface": bool(config.HUGGINGFACE_API_KEY),
         "qdrant": bool(config.QDRANT_URL and config.QDRANT_API_KEY)
     }
     
     # Initialize clients as needed
     perplexity_client = None
     anthropic_client = None
+    huggingface_client = None
     
     # Check Venice API status
     if venice_client:
@@ -318,6 +322,14 @@ def admin():
         except Exception as e:
             logger.error(f"Error testing Anthropic API: {str(e)}")
     
+    # Check Hugging Face API status if key is available
+    if api_keys["huggingface"]:
+        try:
+            huggingface_client = HuggingFaceClient()
+            api_status["huggingface"] = huggingface_client.test_connection()
+        except Exception as e:
+            logger.error(f"Error testing Hugging Face API: {str(e)}")
+    
     # Check Qdrant status
     if agent and agent.memory_manager:
         api_status["qdrant"] = True
@@ -326,6 +338,7 @@ def admin():
     venice_models = []
     perplexity_models = []
     anthropic_models = []
+    huggingface_models = []
     model_performance = []
     
     # Fetch Venice.ai models
@@ -349,6 +362,13 @@ def admin():
         except Exception as e:
             logger.error(f"Error fetching Anthropic models: {str(e)}")
     
+    # Fetch Hugging Face models
+    if api_status["huggingface"] and huggingface_client:
+        try:
+            huggingface_models = huggingface_client.get_available_models()
+        except Exception as e:
+            logger.error(f"Error fetching Hugging Face models: {str(e)}")
+    
     # Get model performance metrics from database
     try:
         model_performance = ModelPerformance.query.all()
@@ -371,5 +391,6 @@ def admin():
                            venice_models=venice_models,
                            perplexity_models=perplexity_models,
                            anthropic_models=anthropic_models,
+                           huggingface_models=huggingface_models,
                            model_performance=model_performance,
                            strategy=strategy)
