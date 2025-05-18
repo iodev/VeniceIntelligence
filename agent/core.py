@@ -10,6 +10,7 @@ from agent.models import VeniceClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
 from agent.evaluation import evaluate_model_response
+from agent.registry import ModelRegistry
 from models import ModelPerformance, UsageCost
 import config
 from flask import current_app
@@ -131,12 +132,18 @@ class Agent:
         self.available_models = available_models
         self.cost_monitor = CostMonitor()
         
+        # Create model registry 
+        self.model_registry = ModelRegistry()
+        
         # Try to initialize additional API clients if keys are available
         # Initialize Perplexity client first as Anthropic can use it for model discovery
         try:
             self.perplexity_client = PerplexityClient()
             if self.perplexity_client.api_key:
                 logger.info("Perplexity API client initialized successfully")
+                
+                # Register this client with the model registry
+                self.model_registry.register_client("perplexity", self.perplexity_client)
                 
                 # We'll register Perplexity models at the end of initialization
                 self._register_provider_models_pending = True
@@ -152,6 +159,9 @@ class Agent:
             self.anthropic_client = AnthropicClient(perplexity_client=self.perplexity_client)
             if self.anthropic_client.api_key:
                 logger.info("Anthropic API client initialized successfully")
+                
+                # Register with model registry
+                self.model_registry.register_client("anthropic", self.anthropic_client)
                 
                 # Proactively update Anthropic models via Perplexity
                 if self.perplexity_client and self.perplexity_client.api_key:
