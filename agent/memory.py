@@ -101,11 +101,32 @@ class MemoryManager:
                     # Check if vector size matches
                     try:
                         collection_info = self.client.get_collection(collection_name=collection_name)
-                        current_vector_size = collection_info.config.params.vectors.size
-                        if current_vector_size != vector_size:
-                            logger.warning(f"Collection {collection_name} has vector size {current_vector_size} but {vector_size} is required")
-                            logger.info(f"Recreating collection {collection_name} with correct vector size")
-                            self.client.delete_collection(collection_name=collection_name)
+                        # Safely check vector size with proper type handling
+                        if hasattr(collection_info, 'config') and hasattr(collection_info.config, 'params'):
+                            vectors_config = collection_info.config.params.vectors
+                            # Default to None, will be set if we can determine size
+                            current_vector_size = None
+                            
+                            # Handle different response formats
+                            if isinstance(vectors_config, dict) and 'size' in vectors_config:
+                                current_vector_size = vectors_config['size']
+                            elif hasattr(vectors_config, 'size'):
+                                current_vector_size = vectors_config.size
+                            else:
+                                logger.warning("Could not determine vector size from collection info")
+                                create_new_collection = True
+                            
+                            # Only check if we were able to determine the size
+                            if current_vector_size is not None and current_vector_size != vector_size:
+                                logger.warning(f"Collection {collection_name} has vector size {current_vector_size} but {vector_size} is required")
+                                logger.info(f"Recreating collection {collection_name} with correct vector size")
+                                
+                                # Only try to delete if client exists
+                                if self.client is not None:
+                                    self.client.delete_collection(collection_name=collection_name)
+                                create_new_collection = True
+                        else:
+                            logger.warning("Collection info doesn't have expected structure")
                             create_new_collection = True
                     except Exception as e:
                         logger.error(f"Error checking collection vector size: {e}")
@@ -113,13 +134,27 @@ class MemoryManager:
                 
                 if create_new_collection:
                     logger.info(f"Creating collection {collection_name} with vector size {vector_size}")
-                    self.client.create_collection(
-                        collection_name=collection_name,
-                        vectors_config=qdrant_models.VectorParams(
-                            size=vector_size,
-                            distance=qdrant_models.Distance.COSINE
-                        )
-                    )
+                    try:
+                        if QDRANT_AVAILABLE:
+                            # Use VectorParams from the correct module
+                            from qdrant_client.http import models as qdrant_models
+                            vector_params = qdrant_models.VectorParams(
+                                size=vector_size,
+                                distance=qdrant_models.Distance.COSINE
+                            )
+                            self.client.create_collection(
+                                collection_name=collection_name,
+                                vectors_config=vector_params
+                            )
+                        else:
+                            # Using mock classes (should not reach this in normal flow)
+                            logger.warning("Using mock Qdrant classes - this should not happen")
+                            self.using_qdrant = False
+                            self._init_local_storage()
+                    except Exception as e:
+                        logger.error(f"Failed to create collection: {e}")
+                        self.using_qdrant = False
+                        self._init_local_storage()
                 self.using_qdrant = True
                 logger.info(f"Using Qdrant for memory persistence at {qdrant_url}")
             except Exception as e:
@@ -255,11 +290,11 @@ class MemoryManager:
                 # Ensure we properly handle the response
                 if search_result is not None and len(search_result) > 0:
                     # Handle different point types by safely extracting payload
-                    result_list = []
+                    result_list: List[Dict[str, Any]] = []
                     for point in search_result:
-                        if hasattr(point, 'payload'):
+                        if hasattr(point, 'payload') and isinstance(point.payload, dict):
                             result_list.append(point.payload)
-                        elif isinstance(point, dict) and 'payload' in point:
+                        elif isinstance(point, dict) and 'payload' in point and isinstance(point['payload'], dict):
                             result_list.append(point['payload'])
                         else:
                             # Skip invalid points
@@ -310,7 +345,7 @@ class MemoryManager:
             List of memory payloads
         """
         try:
-            if self.using_qdrant:
+            if self.using_qdrant and self.client is not None:
                 # Qdrant doesn't directly support sorting by payload fields
                 # Get a larger batch and sort locally
                 search_result = self.client.scroll(
@@ -319,12 +354,18 @@ class MemoryManager:
                     with_vectors=False
                 )
                 
-                points = search_result[0]
-                memories = [point.payload for point in points]
-                
-                # Sort by timestamp (descending)
-                memories.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-                return memories[:limit]
+                if search_result and len(search_result) > 0:
+                    points = search_result[0]
+                    # Safely extract payloads
+                    memories: List[Dict[str, Any]] = []
+                    for point in points:
+                        if hasattr(point, 'payload') and isinstance(point.payload, dict):
+                            memories.append(point.payload)
+                    
+                    # Sort by timestamp (descending)
+                    memories.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+                    return memories[:limit]
+                return []
             else:
                 # Sort local storage by timestamp
                 sorted_memories = sorted(
@@ -346,16 +387,27 @@ class MemoryManager:
             Success status
         """
         try:
-            if self.using_qdrant:
+            if self.using_qdrant and self.client is not None:
                 # Delete and recreate collection
-                self.client.delete_collection(collection_name=self.collection_name)
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=qdrant_models.VectorParams(
-                        size=self.vector_size,
-                        distance=qdrant_models.Distance.COSINE
+                try:
+                    self.client.delete_collection(collection_name=self.collection_name)
+                except Exception as e:
+                    logger.warning(f"Error deleting collection (might not exist): {str(e)}")
+                
+                # Create a new collection with proper error handling
+                try:
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=qdrant_models.VectorParams(
+                            size=self.vector_size,
+                            distance=qdrant_models.Distance.COSINE
+                        )
                     )
-                )
+                except Exception as e:
+                    logger.error(f"Failed to create collection: {str(e)}")
+                    self.using_qdrant = False
+                    self._init_local_storage()
+                    return False
             else:
                 # Clear local storage
                 self.local_storage = []
