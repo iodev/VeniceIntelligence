@@ -241,7 +241,16 @@ class VeniceClient:
                             if not line or line == b'[DONE]':
                                 continue
                                 
-                            chunk_data = json.loads(line)
+                            # Safely decode and parse JSON
+                            try:
+                                line_str = line.decode('utf-8') if isinstance(line, bytes) else line
+                                chunk_data = json.loads(line_str)
+                            except UnicodeDecodeError as e:
+                                logger.warning(f"Unicode decode error in streaming response: {e}")
+                                continue
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"JSON decode error in streaming response: {e}, line: {line}")
+                                continue
                             
                             # Extract the delta text
                             delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")

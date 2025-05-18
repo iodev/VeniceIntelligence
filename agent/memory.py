@@ -142,13 +142,13 @@ class MemoryManager:
                     try:
                         if QDRANT_AVAILABLE:
                             # Use VectorParams from the correct module
-                            from qdrant_client.http import models as qdrant_models
+                            from qdrant_client.models import VectorParams, Distance
                             self.client.create_collection(
                                 collection_name=collection_name,
-                                vectors_config={
-                                    "size": vector_size,
-                                    "distance": "cosine"
-                                }
+                                vectors_config=VectorParams(
+                                    size=vector_size,
+                                    distance=Distance.COSINE
+                                )
                             )
                         else:
                             # Using mock classes (should not reach this in normal flow)
@@ -408,13 +408,13 @@ class MemoryManager:
                 try:
                     # Ensure we're using the proper Qdrant models
                     if QDRANT_AVAILABLE:
-                        from qdrant_client.http import models as qdrant_models
+                        from qdrant_client.models import VectorParams, Distance
                         self.client.create_collection(
                             collection_name=self.collection_name,
-                            vectors_config={
-                                "size": self.vector_size,
-                                "distance": "cosine"
-                            }
+                            vectors_config=VectorParams(
+                                size=self.vector_size,
+                                distance=Distance.COSINE
+                            )
                         )
                     else:
                         logger.warning("Cannot create collection: Qdrant not available")
