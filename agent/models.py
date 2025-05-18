@@ -105,14 +105,28 @@ class VeniceClient:
             temperature: Sampling temperature (0-1)
             top_p: Top-p sampling parameter
             stop: Optional list of stop sequences
+            stream: Whether to stream the response
             
         Returns:
-            Generated text
+            Generated text or stream iterator if stream=True
         """
         if not messages:
             raise ValueError("Messages cannot be empty")
             
-        logger.info(f"Generating with model: {model}")
+        logger.info(f"Generating with model: {model} (stream={stream})")
+        
+        # Use streaming endpoint if requested
+        if stream:
+            return self.generate_stream(
+                messages=messages,
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop=stop
+            )
+            
+        # For non-streaming requests:
         logger.debug(f"Messages: {messages}")
             
         # Venice.ai Chat API payload
@@ -156,6 +170,9 @@ class VeniceClient:
             
             return generated_text
         
+        except requests.Timeout as e:
+            logger.error(f"Timeout error with Venice API: {str(e)}")
+            raise Exception(f"Venice API request timed out: {str(e)}")
         except requests.RequestException as e:
             logger.error(f"Request error with Venice API: {str(e)}")
             raise Exception(f"Failed to communicate with Venice API: {str(e)}")
@@ -228,9 +245,17 @@ class VeniceClient:
                     logger.error(error_msg)
                     raise Exception(error_msg)
                 
-                # Process the streamed response
+                # Process the streamed response with timeout handling
                 accumulated_text = ""
+                start_time = time.time()
+                timeout_seconds = 120  # 2-minute timeout for streaming
+                
                 for line in response.iter_lines():
+                    # Check for timeout
+                    if time.time() - start_time > timeout_seconds:
+                        logger.warning(f"Streaming response timeout after {timeout_seconds} seconds")
+                        break
+                        
                     if line:
                         try:
                             # Remove 'data: ' prefix if present (SSE format)
@@ -252,26 +277,63 @@ class VeniceClient:
                                 logger.warning(f"JSON decode error in streaming response: {e}, line: {line}")
                                 continue
                             
-                            # Extract the delta text
-                            delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                            if delta:
-                                accumulated_text += delta
-                                yield delta
-                        except json.JSONDecodeError:
-                            logger.warning(f"Could not parse streaming response line: {line}")
+                            # Safely extract the delta text with appropriate error handling
+                            try:
+                                if not chunk_data or "choices" not in chunk_data or not chunk_data["choices"]:
+                                    logger.warning(f"Missing choices in streaming response chunk: {chunk_data}")
+                                    continue
+
+                                choice = chunk_data["choices"][0]
+                                if not choice or "delta" not in choice:
+                                    logger.warning(f"Missing delta in streaming response choice: {choice}")
+                                    continue
+                                    
+                                delta = choice.get("delta", {}).get("content", "")
+                                if delta:
+                                    accumulated_text += delta
+                                    yield delta
+                            except (KeyError, IndexError, TypeError) as e:
+                                logger.warning(f"Error extracting delta from chunk: {e}, chunk_data: {chunk_data}")
+                                continue
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Could not parse streaming response line: {line}, error: {e}")
                             continue
                         except Exception as e:
-                            logger.warning(f"Error processing streaming response: {e}")
+                            logger.warning(f"Error processing streaming response: {e}, line: {line}")
                             continue
                 
+                # Check if we received any content
                 if not accumulated_text:
                     logger.warning("Empty accumulated response from Venice API streaming")
+                    # Try to yield a fallback message to prevent UI from getting stuck
+                    yield "I apologize, but the response stream ended unexpectedly. Please try again."
+                
+                # Success signal for complete streams
+                yield "[DONE]"
         
+        except (requests.ConnectionError, requests.Timeout) as e:
+            error_type = "connection" if isinstance(e, requests.ConnectionError) else "timeout"
+            logger.error(f"{error_type.capitalize()} error with Venice API streaming: {str(e)}")
+            
+            # Yield appropriate user-friendly error message
+            if isinstance(e, requests.ConnectionError):
+                yield "I apologize, but there was a problem connecting to the AI service. Please try again in a moment."
+            else:  # Timeout
+                yield "I apologize, but the request to the AI service timed out. Please try again with a simpler query."
+                
+            yield "[DONE]"
+            raise Exception(f"Venice API streaming {error_type} error: {str(e)}")
         except requests.RequestException as e:
             logger.error(f"Request error with Venice API streaming: {str(e)}")
+            # Yield a user-friendly error message before raising the exception
+            yield "I apologize, but there was a problem with the request to the AI service. Please try again."
+            yield "[DONE]"
             raise Exception(f"Failed to communicate with Venice API streaming: {str(e)}")
         except Exception as e:
             logger.error(f"Unexpected error in streaming: {str(e)}")
+            # Yield a user-friendly unexpected error message
+            yield "I apologize, but an unexpected error occurred. Please try again."
+            yield "[DONE]"
             raise
     
     def generate_stream(
