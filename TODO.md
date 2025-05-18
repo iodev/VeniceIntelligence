@@ -13,8 +13,8 @@
 
 ### agent/core.py
 - [✓] Fix LSP error for ModelPerformance constructor in init_default_models (lines 39-47) (FIXED: added missing required properties like provider, capabilities, context_window, and display_name)
-- Fix LSP error for ModelPerformance constructor in _record_query method (lines 851-859)
-- Implement streaming response handler for non-Venice providers
+- [✓] Fix LSP error for ModelPerformance constructor in _update_model_performance method (FIXED: added missing required properties like provider, capabilities, context_window, and display_name)
+- [✓] Implement streaming response handler for non-Venice providers (FIXED: implemented streaming response handler for Anthropic client)
 
 ### agent/cost_control.py
 - [✓] Fix constructor calls for CostControlStrategy, UsageCost, and ModelEfficiency (FIXED: updated all constructors to initialize objects first then set attributes)

@@ -879,12 +879,16 @@ class Agent:
         if not model_record:
             model_record = ModelPerformance()
             model_record.model_id = model
+            model_record.provider = "venice"  # Default provider
             model_record.total_calls = 0
             model_record.successful_calls = 0
             model_record.total_latency = 0.0
             model_record.quality_score = 0.0
             model_record.quality_evaluations = 0
             model_record.is_current = (model == self.current_model)
+            model_record.capabilities = "text"  # Default capability
+            model_record.context_window = 8192  # Default context window
+            model_record.display_name = model   # Default display name
             db.session.add(model_record)
         
         # Update metrics

@@ -3,7 +3,7 @@ import json
 import os
 import re
 import time
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Generator
 import requests
 
 logger = logging.getLogger(__name__)
@@ -210,7 +210,7 @@ class AnthropicClient:
         temperature: float = 0.7,
         top_p: float = 0.9,
         stream: bool = False
-    ) -> Dict[str, Any]:
+    ) -> Union[Dict[str, Any], Any]:
         """
         Generate text using Anthropic API
         
@@ -246,10 +246,66 @@ class AnthropicClient:
             "messages": anthropic_messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
-            "top_p": top_p
+            "top_p": top_p,
+            "stream": stream
         }
             
         try:
+            # Handle streaming responses differently
+            if stream:
+                # For streaming, we need to return a generator directly
+                # We don't want to call _handle_streaming_response which would create a generator
+                # Instead, set up streaming directly here
+                with self.session.post(
+                    f"{self.base_url}/messages",
+                    json=payload,
+                    stream=True,
+                    timeout=120  # Longer timeout for streaming
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = response.text if hasattr(response, 'text') else ""
+                        error_msg = f"Anthropic API streaming error: {response.status_code}"
+                        if error_text:
+                            error_msg += f" - {error_text}"
+                        logger.error(error_msg)
+                        return {"error": error_msg, "success": False}
+                    
+                    # Process the streaming response
+                    content_buffer = ""
+                    
+                    # Create a generator to return
+                    def content_generator():
+                        nonlocal content_buffer
+                        for line in response.iter_lines():
+                            if line:
+                                line_text = line.decode('utf-8')
+                                
+                                # Skip empty lines and "data: [DONE]"
+                                if not line_text or line_text == "data: [DONE]":
+                                    continue
+                                    
+                                # Parse the line
+                                if line_text.startswith('data: '):
+                                    try:
+                                        # Remove the "data: " prefix
+                                        json_str = line_text[6:]
+                                        data = json.loads(json_str)
+                                        
+                                        # Extract content delta if available
+                                        if 'delta' in data and 'content' in data['delta'] and data['delta']['content']:
+                                            content_delta = data['delta']['content']
+                                            content_buffer += content_delta
+                                            yield content_delta
+                                        # Alternative format for completed chunk
+                                        elif 'content' in data and data['content']:
+                                            yield data['content']
+                                    except json.JSONDecodeError as e:
+                                        logger.error(f"Invalid JSON in streaming response: {e}")
+                                        yield f"ERROR: Invalid JSON in streaming response"
+                    
+                    return content_generator()
+                
+            # Non-streaming response
             response = self.session.post(
                 f"{self.base_url}/messages",
                 json=payload,
@@ -314,6 +370,77 @@ class AnthropicClient:
             logger.error(f"Unexpected error: {str(e)}")
             raise
             
+    def _handle_streaming_response(self, payload: Dict[str, Any]) -> Union[Dict[str, Any], Any]:
+        """
+        Handle streaming responses from Anthropic API
+        
+        Args:
+            payload: The API request payload
+            
+        Returns:
+            Iterator yielding content chunks for streaming or response dictionary
+        """
+        content_buffer = ""
+        model_id = payload.get("model", "unknown")
+        
+        try:
+            # Set up a streaming request
+            with self.session.post(
+                f"{self.base_url}/messages",
+                json=payload,
+                stream=True,
+                timeout=120  # Longer timeout for streaming
+            ) as response:
+                if response.status_code != 200:
+                    error_text = response.text if hasattr(response, 'text') else ""
+                    error_msg = f"Anthropic API streaming error: {response.status_code}"
+                    if error_text:
+                        error_msg += f" - {error_text}"
+                    logger.error(error_msg)
+                    yield f"ERROR: {error_msg}"
+                    return
+                
+                # Process the streaming response
+                for line in response.iter_lines():
+                    if line:
+                        line_text = line.decode('utf-8')
+                        
+                        # Skip empty lines and "data: [DONE]"
+                        if not line_text or line_text == "data: [DONE]":
+                            continue
+                            
+                        # Parse the line
+                        if line_text.startswith('data: '):
+                            try:
+                                # Remove the "data: " prefix
+                                json_str = line_text[6:]
+                                data = json.loads(json_str)
+                                
+                                # Extract content delta if available
+                                if 'delta' in data and 'content' in data['delta'] and data['delta']['content']:
+                                    content_delta = data['delta']['content']
+                                    content_buffer += content_delta
+                                    yield content_delta
+                                # Alternative format for completed chunk
+                                elif 'content' in data and data['content']:
+                                    yield data['content']
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Invalid JSON in streaming response: {e}")
+                                yield f"ERROR: Invalid JSON in streaming response"
+                
+        except requests.RequestException as e:
+            error_msg = f"Request error with Anthropic API streaming: {str(e)}"
+            logger.error(error_msg)
+            yield f"ERROR: {error_msg}"
+        except Exception as e:
+            error_msg = f"Unexpected error during Anthropic streaming: {str(e)}"
+            logger.error(error_msg)
+            yield f"ERROR: {error_msg}"
+        
+        # Log final content for debugging
+        if content_buffer:
+            logger.debug(f"Total content collected: {len(content_buffer)} chars")
+    
     def get_available_models(self) -> List[Dict[str, Any]]:
         """
         Get list of available models for Anthropic
