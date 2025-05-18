@@ -179,6 +179,36 @@ class Agent:
         except Exception as e:
             logger.warning(f"Failed to initialize Anthropic client: {str(e)}")
             self.anthropic_client = None
+            
+        # Initialize OpenAI client
+        try:
+            self.openai_client = OpenAIClient()
+            if self.openai_client.api_key:
+                # Test the connection
+                if self.openai_client.test_connection():
+                    logger.info("OpenAI API client initialized successfully")
+                    
+                    # Register with model registry
+                    self.model_registry.register_client("openai", self.openai_client)
+                    
+                    # Register OpenAI models
+                    self._register_provider_models("openai")
+                    logger.info("Successfully registered OpenAI models")
+                    
+                    # Update provider status
+                    self._provider_status["openai"] = True
+                else:
+                    logger.warning("OpenAI connection test failed, client not available")
+                    self.openai_client = None
+            else:
+                self.openai_client = None
+                logger.warning("No OpenAI API key found, client not available")
+        except Exception as e:
+            logger.warning(f"Failed to initialize OpenAI client: {str(e)}")
+            self.openai_client = None
+            
+        # Initialize content classifier for intelligent model selection
+        self.content_classifier = ContentClassifier()
         
         # Load or initialize models in database
         init_default_models()
@@ -217,7 +247,7 @@ class Agent:
         
         logger.info(f"Agent initialized with current model: {self.current_model}")
     
-    def process_query(self, query: str, system_prompt: Optional[str] = None, query_type: str = "text", session_id: Optional[str] = None) -> Tuple[str, str]:
+    def process_query(self, query: str, system_prompt: Optional[str] = None, query_type: str = None, session_id: Optional[str] = None) -> Tuple[str, str]:
         """
         Process a user query and return the response using the most appropriate model.
         
@@ -225,12 +255,27 @@ class Agent:
             query: The user's query
             system_prompt: Optional system prompt describing the agent's purpose.
                            If None, the default_system_prompt will be used.
-            query_type: Type of query (text, code, image)
+            query_type: Type of query (text, code, image). If None, will be auto-detected.
             session_id: Optional session identifier for tracking conversation continuity
             
         Returns:
             Tuple of (response text, model used)
         """
+        # Use content classifier to determine query type if not specified
+        if query_type is None and hasattr(self, 'content_classifier'):
+            content_scores = self.content_classifier.classify_query(query, system_prompt)
+            # Find the content type with highest score
+            highest_score = 0
+            query_type = "text"  # Default if no clear winner
+            
+            for content_type, score in content_scores.items():
+                if score > highest_score:
+                    highest_score = score
+                    query_type = content_type
+                    
+            logger.info(f"Auto-detected query type: {query_type} with confidence {highest_score:.2f}")
+        elif query_type is None:
+            query_type = "text"  # Default if content classifier isn't available
         # Use default system prompt if none is provided
         if system_prompt is None:
             system_prompt = self.default_system_prompt
@@ -1308,15 +1353,67 @@ class Agent:
                 
         return best_model
     
-    def _get_best_model(self) -> str:
+    def _get_best_model(self, query_type: str = "text") -> str:
         """
-        Get the best performing model based on success rate and latency
+        Get the best performing model based on success rate, latency, and query type
         
+        Args:
+            query_type: Type of query (text, code, image, math)
+            
         Returns:
             Best model ID
         """
         from models import ModelPerformance
         
+        # Use content classifier if available for determining the best model for the query type
+        if hasattr(self, 'content_classifier') and query_type:
+            try:
+                # Get available providers
+                available_providers = []
+                for provider, status in self._provider_status.items():
+                    if status:
+                        available_providers.append(provider)
+                
+                # Get model records from database
+                model_records = ModelPerformance.query.all()
+                
+                # Format models for content classifier
+                available_models = []
+                for record in model_records:
+                    # Skip unavailable models
+                    if not record.is_available:
+                        continue
+                    
+                    # Skip models not in our available list
+                    if record.model_id not in self.available_models:
+                        continue
+                    
+                    model_info = {
+                        "id": record.model_id,
+                        "provider": record.provider,
+                        "context_window": record.context_window,
+                        "capabilities": record.capabilities.split(",") if record.capabilities else []
+                    }
+                    available_models.append(model_info)
+                
+                if available_providers and available_models:
+                    # Find optimal provider for this content type
+                    content_scores = {query_type: 1.0}  # Use provided query type with 100% confidence
+                    provider, content_type = self.content_classifier.get_optimal_provider(
+                        content_scores, available_providers)
+                    
+                    # Get optimal model for this provider and content type
+                    selected_model = self.content_classifier.get_optimal_model(
+                        provider, content_type, available_models)
+                    
+                    if selected_model:
+                        logger.info(f"Selected {selected_model} for {content_type} content using {provider}")
+                        return selected_model
+            except Exception as e:
+                logger.warning(f"Error selecting model with content classifier: {str(e)}")
+                # Continue to performance-based selection as fallback
+        
+        # Performance-based selection (original logic)
         best_score = -1
         best_model = self.current_model
         
@@ -1341,7 +1438,9 @@ class Agent:
             # Store for later use
             model_data[record.model_id] = {
                 "success_rate": success_rate,
-                "average_latency": avg_latency
+                "average_latency": avg_latency,
+                "provider": record.provider,
+                "capabilities": record.capabilities.split(",") if record.capabilities else []
             }
             
             # Track maximum speed for normalization
@@ -1361,8 +1460,18 @@ class Agent:
             if max_speed_value > 0:
                 speed_score = speed_score / max_speed_value
             
-            # Combined score
-            score = (0.7 * success_rate) + (0.3 * speed_score)
+            # Base score
+            base_score = (0.7 * success_rate) + (0.3 * speed_score)
+            
+            # Apply content type bonus if applicable
+            content_bonus = 0.0
+            if query_type == "code" and "code" in data["capabilities"]:
+                content_bonus = 0.2
+            elif query_type == "image" and "image" in data["capabilities"]:
+                content_bonus = 0.3
+            
+            # Final score with content type consideration
+            score = base_score + content_bonus
             
             if score > best_score:
                 best_score = score
