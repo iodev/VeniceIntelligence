@@ -146,6 +146,15 @@ class Agent:
             self.anthropic_client = AnthropicClient(perplexity_client=self.perplexity_client)
             if self.anthropic_client.api_key:
                 logger.info("Anthropic API client initialized successfully")
+                
+                # Proactively update Anthropic models via Perplexity
+                if self.perplexity_client and self.perplexity_client.api_key:
+                    try:
+                        # Attempt to fetch and register current Anthropic models
+                        self._register_provider_models("anthropic")
+                        logger.info("Successfully updated Anthropic models via Perplexity")
+                    except Exception as model_err:
+                        logger.warning(f"Failed to update Anthropic models: {str(model_err)}")
             else:
                 self.anthropic_client = None
                 logger.warning("No Anthropic API key found, client not available")
