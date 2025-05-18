@@ -267,7 +267,8 @@ class AgentAPI:
         agent_id: Optional[str] = None,
         provider: Optional[str] = None,
         model_id: Optional[str] = None,
-        stream: bool = False
+        stream: bool = False,
+        session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Process a query from another node or system
@@ -282,6 +283,7 @@ class AgentAPI:
             provider: Optional provider to use (venice, anthropic, perplexity)
             model_id: Optional specific model ID to use
             stream: Whether to stream the response (for streaming UIs)
+            session_id: Optional session identifier for tracking conversation continuity
 
         Returns:
             Dictionary with response and metadata
@@ -300,10 +302,16 @@ class AgentAPI:
                 # For streaming, we need to get the direct stream from the provider
                 if hasattr(self.agent, 'venice_client') and self.agent.venice_client:
                     try:
+                        # If session_id is provided, get conversation history for continuity
+                        conversation_history = []
+                        if session_id and session_id in self.agent.active_conversations:
+                            conversation_history = self.agent.active_conversations[session_id].get("messages", [])
+                            logger.debug(f"Using conversation history from session {session_id} with {len(conversation_history)} messages")
+                        
                         # Prepare context and messages similar to agent's process_query
                         relevant_memories = self.agent.memory_manager.get_relevant_memories(query, limit=5)
                         context = self.agent._create_context_from_memories(relevant_memories)
-                        messages = self.agent._construct_prompt(query, system_prompt, context)
+                        messages = self.agent._construct_prompt(query, system_prompt, context, conversation_history)
                         
                         # Get the model to use - simplified version of what the agent does
                         model_to_use = model_id if model_id else self.agent.current_model
@@ -321,6 +329,18 @@ class AgentAPI:
                             system_prompt=system_prompt
                         )
                         
+                        # Update conversation history if session_id is provided
+                        if session_id:
+                            if session_id not in self.agent.active_conversations:
+                                self.agent.active_conversations[session_id] = {
+                                    "messages": [],
+                                    "last_updated": datetime.now(),
+                                    "query_count": 1
+                                }
+                            else:
+                                self.agent.active_conversations[session_id]["last_updated"] = datetime.now()
+                                self.agent.active_conversations[session_id]["query_count"] += 1
+                        
                         # Return with stream
                         return {
                             "status": "success",
@@ -329,7 +349,8 @@ class AgentAPI:
                             "query_type": query_type,
                             "query_id": query_id,
                             "timestamp": datetime.utcnow().isoformat(),
-                            "agent_id": agent_id
+                            "agent_id": agent_id,
+                            "session_id": session_id
                         }
                     except Exception as e:
                         logger.error(f"Error setting up stream: {str(e)}")
@@ -342,7 +363,8 @@ class AgentAPI:
             response_text, model_used = self.agent.process_query(
                 query, 
                 system_prompt, 
-                query_type
+                query_type,
+                session_id
             )
             
             # Return structured response
@@ -353,7 +375,8 @@ class AgentAPI:
                 "query_type": query_type,
                 "query_id": query_id,
                 "timestamp": datetime.utcnow().isoformat(),
-                "agent_id": agent_id
+                "agent_id": agent_id,
+                "session_id": session_id
             }
             
         except Exception as e:

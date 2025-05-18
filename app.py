@@ -120,16 +120,28 @@ def chat():
     if not query:
         return jsonify({"error": "Empty query"}), 400
     
+    # Get or create session ID for conversation tracking
+    session_id = session.get('conversation_id')
+    if not session_id:
+        session_id = str(datetime.datetime.now().timestamp())
+        session['conversation_id'] = session_id
+        logger.debug(f"Created new conversation session: {session_id}")
+    
     try:
         if stream:
-            return stream_chat(query, system_prompt, query_type)
+            return stream_chat(query, system_prompt, query_type, session_id)
         else:
             # Get response from the agent API
             # The agent API layer handles all business logic
             result = agent_api.process_query(
                 query=query, 
                 system_prompt=system_prompt, 
-                query_type=query_type
+                query_type=query_type,
+                agent_id=None,
+                provider=None,
+                model_id=None,
+                stream=False,
+                session_id=session_id  # Pass session ID for conversation continuity
             )
             
             if result.get('status') == 'success':
@@ -138,6 +150,7 @@ def chat():
                     "response": result.get('response'),
                     "model_used": result.get('model_used'),
                     "query_type": query_type,
+                    "conversation_id": session_id,
                     "success": True
                 })
             else:
@@ -147,7 +160,7 @@ def chat():
         logger.error(f"Error processing query: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-def stream_chat(query, system_prompt, query_type="text"):
+def stream_chat(query, system_prompt, query_type="text", session_id=None):
     """Stream chat responses to the client"""
     def generate():
         try:
@@ -162,7 +175,8 @@ def stream_chat(query, system_prompt, query_type="text"):
                 query=query,
                 system_prompt=system_prompt,
                 query_type=query_type,
-                stream=True
+                stream=True,
+                session_id=session_id  # Pass session ID for conversation continuity
             )
             
             if result.get('status') != 'success':
