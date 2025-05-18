@@ -329,9 +329,15 @@ class CostMonitor:
                 continue
                 
             # Calculate weighted score based on strategy priorities
-            cost_weight = self._current_strategy.prioritize_cost
-            speed_weight = self._current_strategy.prioritize_speed
-            accuracy_weight = self._current_strategy.prioritize_accuracy
+            if self._current_strategy:
+                cost_weight = self._current_strategy.prioritize_cost
+                speed_weight = self._current_strategy.prioritize_speed
+                accuracy_weight = self._current_strategy.prioritize_accuracy
+            else:
+                # Default weights if no strategy is loaded
+                cost_weight = 0.33
+                speed_weight = 0.33
+                accuracy_weight = 0.34
             
             # In cost saving mode, increase cost weight
             if cost_saving_mode:
@@ -493,13 +499,12 @@ class CostMonitor:
         ).first()
         
         if not efficiency:
-            efficiency = ModelEfficiency(
-                model_id=model_id,
-                provider=provider,
-                task_type=task_type,
-                samples_count=1,
-                user_satisfaction=satisfaction_score
-            )
+            efficiency = ModelEfficiency()
+            efficiency.model_id = model_id
+            efficiency.provider = provider
+            efficiency.task_type = task_type
+            efficiency.samples_count = 1
+            efficiency.user_satisfaction = satisfaction_score
             db.session.add(efficiency)
         else:
             # Update rolling average

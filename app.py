@@ -95,7 +95,7 @@ def chat():
     stream = False
     
     if request.method == 'POST':
-        data = request.json
+        data = request.json if request.json else {}
         query = data.get('query', '')
         system_prompt = data.get('system_prompt', 'You are a helpful AI assistant.')
         query_type = data.get('query_type', 'text')  # Default to text if not specified
@@ -193,7 +193,7 @@ def set_system_prompt():
     if agent is None:
         return jsonify({"error": "Agent is not initialized"}), 500
     
-    data = request.json
+    data = request.json if request.json else {}
     system_prompt = data.get('system_prompt', '')
     
     if not system_prompt:
@@ -212,7 +212,7 @@ def node_update_system_prompt():
         return jsonify({"error": "Agent API is not initialized"}), 500
     
     try:
-        data = request.json
+        data = request.json if request.json else {}
         system_prompt = data.get('system_prompt', '')
         parent_node_id = data.get('parent_node_id')
         
