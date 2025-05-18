@@ -103,16 +103,21 @@ class MemoryManager:
                         collection_info = self.client.get_collection(collection_name=collection_name)
                         # Safely check vector size with proper type handling
                         if hasattr(collection_info, 'config') and hasattr(collection_info.config, 'params'):
-                            vectors_config = collection_info.config.params.vectors
                             # Default to None, will be set if we can determine size
                             current_vector_size = None
                             
-                            # Handle different response formats
-                            if isinstance(vectors_config, dict) and 'size' in vectors_config:
-                                current_vector_size = vectors_config['size']
-                            elif hasattr(vectors_config, 'size'):
-                                current_vector_size = vectors_config.size
-                            else:
+                            # Safely extract vector size
+                            try:
+                                vectors_config = collection_info.config.params.vectors
+                                # Handle different response formats
+                                if isinstance(vectors_config, dict) and 'size' in vectors_config:
+                                    current_vector_size = vectors_config['size']
+                                elif hasattr(vectors_config, 'size'):
+                                    current_vector_size = vectors_config.size
+                            except Exception as e:
+                                logger.warning(f"Error accessing vector size: {e}")
+                                
+                            if current_vector_size is None:
                                 logger.warning("Could not determine vector size from collection info")
                                 create_new_collection = True
                             
@@ -138,13 +143,12 @@ class MemoryManager:
                         if QDRANT_AVAILABLE:
                             # Use VectorParams from the correct module
                             from qdrant_client.http import models as qdrant_models
-                            vector_params = qdrant_models.VectorParams(
-                                size=vector_size,
-                                distance=qdrant_models.Distance.COSINE
-                            )
                             self.client.create_collection(
                                 collection_name=collection_name,
-                                vectors_config=vector_params
+                                vectors_config={
+                                    "size": vector_size,
+                                    "distance": "cosine"
+                                }
                             )
                         else:
                             # Using mock classes (should not reach this in normal flow)
@@ -233,16 +237,22 @@ class MemoryManager:
             if self.using_qdrant:
                 # Store in Qdrant
                 if self.client is not None:
-                    self.client.upsert(
-                        collection_name=self.collection_name,
-                        points=[
-                            qdrant_models.PointStruct(
-                                id=int(time.time() * 1000),  # Use timestamp as ID
-                                vector=embedding,
-                                payload=payload
-                            )
-                        ]
-                    )
+                    # Create point with the appropriate model class
+                    if QDRANT_AVAILABLE:
+                        from qdrant_client.http import models as qdrant_models
+                        self.client.upsert(
+                            collection_name=self.collection_name,
+                            points=[
+                                qdrant_models.PointStruct(
+                                    id=int(time.time() * 1000),  # Use timestamp as ID
+                                    vector=embedding,
+                                    payload=payload
+                                )
+                            ]
+                        )
+                    else:
+                        # In case we're using MockQdrantModels (shouldn't happen normally)
+                        logger.warning("Using mock Qdrant client which cannot store points")
                 else:
                     raise ValueError("Qdrant client is not initialized but using_qdrant is True")
             else:
@@ -396,13 +406,21 @@ class MemoryManager:
                 
                 # Create a new collection with proper error handling
                 try:
-                    self.client.create_collection(
-                        collection_name=self.collection_name,
-                        vectors_config=qdrant_models.VectorParams(
-                            size=self.vector_size,
-                            distance=qdrant_models.Distance.COSINE
+                    # Ensure we're using the proper Qdrant models
+                    if QDRANT_AVAILABLE:
+                        from qdrant_client.http import models as qdrant_models
+                        self.client.create_collection(
+                            collection_name=self.collection_name,
+                            vectors_config={
+                                "size": self.vector_size,
+                                "distance": "cosine"
+                            }
                         )
-                    )
+                    else:
+                        logger.warning("Cannot create collection: Qdrant not available")
+                        self.using_qdrant = False
+                        self._init_local_storage()
+                        return False
                 except Exception as e:
                     logger.error(f"Failed to create collection: {str(e)}")
                     self.using_qdrant = False
