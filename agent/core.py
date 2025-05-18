@@ -375,6 +375,19 @@ class Agent:
         # Store interaction in memory
         self.memory_manager.store_interaction(query, response, system_prompt)
         
+        # Update conversation history for session continuity if session_id provided
+        if session_id and session_id in self.active_conversations:
+            # Add query and response to the conversation history for future context
+            self.active_conversations[session_id]["messages"].append({
+                "role": "user",
+                "content": query
+            })
+            self.active_conversations[session_id]["messages"].append({
+                "role": "assistant",
+                "content": response
+            })
+            logger.debug(f"Updated conversation history for session {session_id}, now has {len(self.active_conversations[session_id]['messages'])} messages")
+        
         # Evaluate response quality
         if success:
             quality_score = evaluate_model_response(query, response)
@@ -382,7 +395,7 @@ class Agent:
         
         return response, model_to_use
     
-    def _construct_prompt(self, query: str, system_prompt: str, context: str, conversation_history: List = None) -> list:
+    def _construct_prompt(self, query: str, system_prompt: str, context: str, conversation_history: Optional[List[Dict[str, str]]] = None) -> list:
         """
         Construct the messages for the Venice.ai Chat API
         
