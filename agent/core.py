@@ -134,6 +134,9 @@ class Agent:
             self.perplexity_client = PerplexityClient()
             if self.perplexity_client.api_key:
                 logger.info("Perplexity API client initialized successfully")
+                
+                # We'll register Perplexity models at the end of initialization
+                self._register_provider_models_pending = True
             else:
                 self.perplexity_client = None
                 logger.warning("No Perplexity API key found, client not available")
@@ -164,6 +167,19 @@ class Agent:
         
         # Load or initialize models in database
         init_default_models()
+        
+        # Process any pending model registrations
+        if hasattr(self, '_register_provider_models_pending') and self._register_provider_models_pending:
+            # Register Perplexity models
+            if self.perplexity_client and self.perplexity_client.api_key:
+                try:
+                    self._register_provider_models('perplexity')
+                    logger.info("Successfully registered Perplexity models")
+                except Exception as e:
+                    logger.warning(f"Failed to register Perplexity models: {str(e)}")
+            
+            # Clear the pending flag
+            self._register_provider_models_pending = False
         
         # Get current model from database
         current_model_record = ModelPerformance.query.filter_by(is_current=True).first()
@@ -972,6 +988,106 @@ class Agent:
                 
                 # Update local reference
                 self.current_model = model
+    
+    def _register_provider_models(self, provider: str) -> None:
+        """
+        Register models from a specific provider dynamically
+        
+        Args:
+            provider: The provider name (e.g., "anthropic", "perplexity")
+        """
+        from models import ModelPerformance
+        from main import db
+        
+        logger.info(f"Registering models for provider: {provider}")
+        
+        if provider == "anthropic" and self.anthropic_client:
+            # Get models from Anthropic client, which might use Perplexity for discovery
+            new_models = self.anthropic_client.get_available_models()
+            logger.info(f"Discovered {len(new_models)} models from Anthropic")
+            
+            # Register each model in the database if it doesn't exist
+            for model_data in new_models:
+                model_id = model_data.get("id")
+                if not model_id:
+                    continue
+                    
+                # Check if model already exists
+                existing_model = ModelPerformance.query.filter_by(model_id=model_id).first()
+                if existing_model:
+                    logger.debug(f"Model {model_id} already exists in database")
+                    continue
+                    
+                # Create new model record
+                model = ModelPerformance()
+                model.model_id = model_id
+                model.provider = provider
+                model.total_calls = 0
+                model.successful_calls = 0
+                model.total_latency = 0.0
+                model.quality_score = 0.0
+                model.quality_evaluations = 0
+                model.is_current = False  # Don't set as current by default
+                model.capabilities = "text"  # Default capability
+                
+                # Set context window if available
+                context_window = model_data.get("context_window") or model_data.get("context_length")
+                model.context_window = context_window or 8192  # Default
+                
+                # Set display name if available
+                model.display_name = model_data.get("name") or model_id
+                
+                # Add to database
+                db.session.add(model)
+                logger.info(f"Registered new model: {model_id} from provider {provider}")
+                
+            # Commit all changes
+            db.session.commit()
+                
+        elif provider == "perplexity" and self.perplexity_client:
+            # Get models from Perplexity client
+            new_models = self.perplexity_client.get_available_models()
+            logger.info(f"Discovered {len(new_models)} models from Perplexity")
+            
+            # Register each model in the database if it doesn't exist
+            for model_data in new_models:
+                model_id = model_data.get("id")
+                if not model_id:
+                    continue
+                    
+                # Check if model already exists
+                existing_model = ModelPerformance.query.filter_by(model_id=model_id).first()
+                if existing_model:
+                    logger.debug(f"Model {model_id} already exists in database")
+                    continue
+                    
+                # Create new model record
+                model = ModelPerformance()
+                model.model_id = model_id
+                model.provider = provider
+                model.total_calls = 0
+                model.successful_calls = 0
+                model.total_latency = 0.0
+                model.quality_score = 0.0
+                model.quality_evaluations = 0
+                model.is_current = False  # Don't set as current by default
+                model.capabilities = "text"  # Default capability
+                
+                # Set context window if available
+                context_window = model_data.get("context_length")
+                model.context_window = context_window or 8192  # Default
+                
+                # Set display name if available
+                model.display_name = model_data.get("name") or model_id
+                
+                # Add to database
+                db.session.add(model)
+                logger.info(f"Registered new model: {model_id} from provider {provider}")
+                
+            # Commit all changes
+            db.session.commit()
+        else:
+            logger.warning(f"Unable to register models for provider {provider}: client not available or provider not supported")
     
     def _update_model_quality(self, model: str, quality_score: float) -> None:
         """
