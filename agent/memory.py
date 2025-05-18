@@ -146,10 +146,37 @@ class MemoryManager:
                                     if current_vector_size is None:
                                         try:
                                             if hasattr(collection_info.config.params, 'vectors'):
-                                                vectors = collection_info.config.params.vectors
-                                                if hasattr(vectors, 'size'):
-                                                    current_vector_size = int(vectors.size)
-                                        except (AttributeError, ValueError) as e:
+                                                # Extract vectors safely using a type-agnostic approach
+                                                try:
+                                                    vectors = getattr(collection_info.config.params, 'vectors')
+                                                    # First, try to extract directly from a Qdrant Vector object (if provided)
+                                                    if vectors:
+                                                        # Method 1: Access vector size from the first vector config
+                                                        # This handles the case where vectors is a dictionary of vector configs
+                                                        if isinstance(vectors, dict) and len(vectors) > 0:
+                                                            # Get the first vector config
+                                                            vector_name = next(iter(vectors))
+                                                            vector_config = vectors[vector_name]
+                                                            
+                                                            # Try to extract size as a number
+                                                            size_value = None
+                                                            
+                                                            # Try dictionary-style access
+                                                            if isinstance(vector_config, dict) and 'size' in vector_config:
+                                                                size_value = vector_config['size']
+                                                            # Try attribute access
+                                                            elif hasattr(vector_config, 'size'):
+                                                                size_value = getattr(vector_config, 'size')
+                                                                
+                                                            # Convert to int if possible
+                                                            if size_value is not None:
+                                                                if isinstance(size_value, (int, float)):
+                                                                    current_vector_size = int(size_value)
+                                                                elif isinstance(size_value, str) and size_value.isdigit():
+                                                                    current_vector_size = int(size_value)
+                                                except Exception as extract_error:
+                                                    logger.debug(f"Error extracting vector size from vectors object: {extract_error}")
+                                        except (AttributeError, ValueError, TypeError) as e:
                                             logger.debug(f"Error in attribute approach to find vector size: {e}")
                                     
                                     # Log what we found for debugging
