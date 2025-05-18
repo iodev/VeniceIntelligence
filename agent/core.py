@@ -36,15 +36,14 @@ def init_default_models():
     
     # Add default models to database
     for model_id in default_models:
-        model = ModelPerformance(
-            model_id=model_id,
-            total_calls=0,
-            successful_calls=0,
-            total_latency=0.0,
-            quality_score=0.0,
-            quality_evaluations=0,
-            is_current=(model_id == "mistral-31-24b")  # Set the default model
-        )
+        model = ModelPerformance()
+        model.model_id = model_id
+        model.total_calls = 0
+        model.successful_calls = 0
+        model.total_latency = 0.0
+        model.quality_score = 0.0
+        model.quality_evaluations = 0
+        model.is_current = (model_id == "mistral-31-24b")  # Set the default model
         db.session.add(model)
     
     db.session.commit()
@@ -874,15 +873,14 @@ class Agent:
         
         # If model doesn't exist, create it
         if not model_record:
-            model_record = ModelPerformance(
-                model_id=model,
-                total_calls=0,
-                successful_calls=0,
-                total_latency=0.0,
-                quality_score=0.0,
-                quality_evaluations=0,
-                is_current=(model == self.current_model)
-            )
+            model_record = ModelPerformance()
+            model_record.model_id = model
+            model_record.total_calls = 0
+            model_record.successful_calls = 0
+            model_record.total_latency = 0.0
+            model_record.quality_score = 0.0
+            model_record.quality_evaluations = 0
+            model_record.is_current = (model == self.current_model)
             db.session.add(model_record)
         
         # Update metrics

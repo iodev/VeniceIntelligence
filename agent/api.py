@@ -67,14 +67,13 @@ class ModelManager:
             
             if not model_record:
                 # Create new record
-                model_record = ModelPerformance(
-                    model_id=model_id,
-                    provider=provider,
-                    display_name=model_info.get('name', model_id),
-                    capabilities=",".join(model_info.get('capabilities', ['text'])),
-                    context_window=model_info.get('context_length', 8192),
-                    cost_per_1k_tokens=model_info.get('cost_per_1k_tokens', 0.0)
-                )
+                model_record = ModelPerformance()
+                model_record.model_id = model_id
+                model_record.provider = provider
+                model_record.display_name = model_info.get('name', model_id)
+                model_record.capabilities = ",".join(model_info.get('capabilities', ['text']))
+                model_record.context_window = model_info.get('context_length', 8192)
+                model_record.cost_per_1k_tokens = model_info.get('cost_per_1k_tokens', 0.0)
                 self.db.session.add(model_record)
             else:
                 # Update existing record
@@ -696,15 +695,14 @@ class AgentAPI:
                     response_tokens = result["usage"].get("completion_tokens", 0)
                 
                 # Create usage cost record
-                usage = UsageCost(
-                    model_id=model,
-                    provider="perplexity",
-                    request_tokens=request_tokens,
-                    response_tokens=response_tokens,
-                    total_tokens=request_tokens + response_tokens,
-                    query_id=query_id,
-                    request_type="chat"
-                )
+                usage = UsageCost()
+                usage.model_id = model
+                usage.provider = "perplexity"
+                usage.request_tokens = request_tokens
+                usage.response_tokens = response_tokens
+                usage.total_tokens = request_tokens + response_tokens
+                usage.query_id = query_id
+                usage.request_type = "chat"
                 db.session.add(usage)
                 db.session.commit()
             except Exception as log_error:
