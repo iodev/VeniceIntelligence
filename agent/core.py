@@ -2,13 +2,13 @@ import logging
 import random
 import time
 from typing import Dict, List, Tuple, Optional, Any
+from datetime import datetime
 from agent.memory import MemoryManager
 from agent.models import VeniceClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
 from agent.evaluation import evaluate_model_response
 import config
-from datetime import datetime
 from flask import current_app
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,9 @@ class Agent:
         """
         # Set the default system prompt
         self.default_system_prompt = default_system_prompt
+        
+        # Conversation tracking for continuity between user queries
+        self.active_conversations = {}  # Map of session_id to conversation state
         
         # Initialize provider status tracking
         self._provider_status = {
@@ -174,7 +177,7 @@ class Agent:
         
         logger.info(f"Agent initialized with current model: {self.current_model}")
     
-    def process_query(self, query: str, system_prompt: Optional[str] = None, query_type: str = "text") -> Tuple[str, str]:
+    def process_query(self, query: str, system_prompt: Optional[str] = None, query_type: str = "text", session_id: Optional[str] = None) -> Tuple[str, str]:
         """
         Process a user query and return the response using the most appropriate model.
         
@@ -183,6 +186,7 @@ class Agent:
             system_prompt: Optional system prompt describing the agent's purpose.
                            If None, the default_system_prompt will be used.
             query_type: Type of query (text, code, image)
+            session_id: Optional session identifier for tracking conversation continuity
             
         Returns:
             Tuple of (response text, model used)
@@ -194,14 +198,34 @@ class Agent:
             
         self.interaction_count += 1
         
-        # Get relevant memories based on the query
+        # Track conversation by session_id if provided
+        conversation_history = []
+        if session_id:
+            # Initialize conversation entry if this is the first query
+            if session_id not in self.active_conversations:
+                self.active_conversations[session_id] = {
+                    "messages": [],
+                    "last_updated": datetime.now(),
+                    "query_count": 0
+                }
+            
+            # Update the conversation
+            self.active_conversations[session_id]["last_updated"] = datetime.now()
+            self.active_conversations[session_id]["query_count"] += 1
+            conversation_history = self.active_conversations[session_id]["messages"]
+        
+        # Get the most relevant memories for this query
         relevant_memories = self.memory_manager.get_relevant_memories(query, limit=5)
         
         # Create context from relevant memories
         context = self._create_context_from_memories(relevant_memories)
         
-        # Construct messages with context
-        messages = self._construct_prompt(query, system_prompt, context)
+        # Include context from active conversation if available
+        if conversation_history:
+            logger.debug(f"Including {len(conversation_history)} messages from ongoing conversation")
+            
+        # Construct messages with context and conversation history
+        messages = self._construct_prompt(query, system_prompt, context, conversation_history)
         
         # If it's time to evaluate models, try a different one
         if self.interaction_count % config.MODEL_EVALUATION_INTERVAL == 0:
@@ -358,7 +382,7 @@ class Agent:
         
         return response, model_to_use
     
-    def _construct_prompt(self, query: str, system_prompt: str, context: str) -> list:
+    def _construct_prompt(self, query: str, system_prompt: str, context: str, conversation_history: List = None) -> list:
         """
         Construct the messages for the Venice.ai Chat API
         
@@ -366,6 +390,7 @@ class Agent:
             query: The user's query
             system_prompt: System instructions for the agent
             context: Context from memory
+            conversation_history: Previous messages in the current conversation session
             
         Returns:
             List of message objects for the Venice.ai Chat API
@@ -382,13 +407,17 @@ class Agent:
             "content": system_content
         })
         
+        # Add previous conversation messages if available
+        if conversation_history and len(conversation_history) > 0:
+            messages.extend(conversation_history)
+        
         # User message
         messages.append({
             "role": "user",
             "content": query
         })
         
-        logger.debug(f"Constructed messages: {messages}")
+        logger.debug(f"Constructed messages: {len(messages)} total messages")
         return messages
     
     def _create_context_from_memories(self, memories: List[Dict[str, Any]]) -> str:

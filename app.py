@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import datetime
 from flask import render_template, request, jsonify, session, redirect, url_for, flash, Response, stream_with_context, current_app
 from main import app, db  # Import Flask app from main.py
 from agent.core import Agent
@@ -18,6 +19,16 @@ import config
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+# Add Jinja2 custom filters
+@app.template_filter('format_timestamp')
+def format_timestamp(timestamp):
+    """Format a Unix timestamp to a readable date/time format"""
+    try:
+        dt = datetime.datetime.fromtimestamp(timestamp)
+        return dt.strftime('%Y-%m-%d %H:%M:%S')
+    except (ValueError, TypeError):
+        return 'Invalid timestamp'
 
 # Create references for the agent components
 venice_client = None
