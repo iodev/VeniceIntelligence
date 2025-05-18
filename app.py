@@ -154,7 +154,9 @@ def stream_chat(query, system_prompt, query_type="text"):
             )
             
             if result.get('status') != 'success':
-                yield f'data: {{"error": "{result.get("error", "Unknown error")}", "type": "error"}}\n\n'
+                import json
+                error_json = json.dumps({"error": result.get("error", "Unknown error"), "type": "error"})
+                yield f'data: {error_json}\n\n'
                 return
                 
             # Get the response stream from the result
@@ -168,7 +170,9 @@ def stream_chat(query, system_prompt, query_type="text"):
             for chunk in response_stream:
                 if not chunk:
                     continue
-                yield f'data: {{"chunk": "{chunk}", "type": "token"}}\n\n'
+                import json
+                chunk_json = json.dumps({"chunk": chunk, "type": "chunk"})
+                yield f'data: {chunk_json}\n\n'
                 
             # Signal that we're done
             yield 'data: {"done": true, "type": "done"}\n\n'
@@ -640,7 +644,7 @@ def admin():
     model_performance = []
     
     # Fetch Venice.ai models
-    if api_status["venice"]:
+    if api_status["venice"] and venice_client:
         try:
             venice_models = venice_client.get_available_models()
         except Exception as e:
