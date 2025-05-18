@@ -301,18 +301,33 @@ class Agent:
         # Determine which provider to use based on the model
         provider = get_provider_for_model(model_to_use)
         
-        # Check if selected provider is available, otherwise use Venice
+        # Get a list of fallback models ordered by performance
+        fallback_models = self._get_fallback_models(provider, model_to_use, query_type)
+        logger.debug(f"Fallback models prepared: {', '.join(fallback_models) if fallback_models else 'None'}")
+        
+        # Check if selected provider is available, otherwise prepare for fallback
         if (provider == "anthropic" and not self._provider_status.get("anthropic", False)) or \
            (provider == "perplexity" and not self._provider_status.get("perplexity", False)):
-            logger.warning(f"Provider {provider} is unavailable, using Venice instead")
-            provider = "venice"
-            model_to_use = self.current_model
+            logger.warning(f"Provider {provider} is unavailable, will try fallback models")
+            
+            # If we have fallback models available, use the first one
+            if fallback_models:
+                model_to_use = fallback_models[0]
+                provider = get_provider_for_model(model_to_use)
+                logger.info(f"Using fallback model {model_to_use} from provider {provider}")
+            else:
+                # If no fallback models, default to Venice
+                logger.warning("No suitable fallback models found, defaulting to Venice")
+                provider = "venice"
+                model_to_use = self.current_model
         
         # Determine if this is a query that requires high accuracy
         high_accuracy_required = self._requires_high_accuracy(query, system_prompt, query_type)
         
         # Call the appropriate model based on provider
         start_time = time.time()
+        # Initialize response in case all attempts fail
+        response = "I apologize, but I'm unable to generate a response at this time."
         try:
             # For high accuracy queries, potentially use multiple providers in parallel
             if high_accuracy_required and self._has_multiple_available_providers():
@@ -334,45 +349,97 @@ class Agent:
                     self._multi_provider_stats[query_type]["total_uses"] += 1
                 
                 success = True
-            elif provider == "venice":
-                # Always prioritize Venice API as it's the most reliable
-                response_data = self.venice_client.generate(messages, model=model_to_use)
-                response = response_data
-                success = True
-            elif provider == "anthropic" and hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False):
-                try:
-                    response_data = self.anthropic_client.generate(messages, model=model_to_use)
-                    response = response_data.get('content', [])[0].get('text', "")
-                    success = True
-                except Exception as e:
-                    # Mark Anthropic as unavailable and fall back to Venice
-                    logger.error(f"Error with Anthropic API, falling back to Venice: {str(e)}")
-                    self._provider_status["anthropic"] = False
-                    response_data = self.venice_client.generate(messages, model=self.current_model)
-                    response = response_data
-                    model_to_use = self.current_model
-                    provider = "venice"
-                    success = True
-            elif provider == "perplexity" and hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False):
-                try:
-                    response_data = self.perplexity_client.generate(messages, model=model_to_use)
-                    response = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
-                    success = True
-                except Exception as e:
-                    # Mark Perplexity as unavailable and fall back to Venice
-                    logger.error(f"Error with Perplexity API, falling back to Venice: {str(e)}")
-                    self._provider_status["perplexity"] = False
-                    response_data = self.venice_client.generate(messages, model=self.current_model)
-                    response = response_data
-                    model_to_use = self.current_model
-                    provider = "venice"
-                    success = True
             else:
-                # Default to Venice client as the safest option
-                response = self.venice_client.generate(messages, model=self.current_model)
-                model_to_use = self.current_model
-                provider = "venice"
-                success = True
+                # Initialize success flag and track remaining fallback models
+                success = False
+                remaining_fallbacks = fallback_models.copy() if fallback_models else []
+                attempted_models = []
+                
+                # First attempt with the selected model
+                while not success:
+                    # Track this attempt
+                    attempted_models.append(model_to_use)
+                    current_provider = self._get_provider_for_model_id(model_to_use)
+                    
+                    try:
+                        logger.info(f"Attempting to use model: {model_to_use} from provider: {current_provider}")
+                        
+                        if current_provider == "venice":
+                            # Venice API
+                            response_data = self.venice_client.generate(messages, model=model_to_use)
+                            response = response_data
+                            success = True
+                            
+                        elif current_provider == "anthropic" and hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False):
+                            # Anthropic API
+                            response_data = self.anthropic_client.generate(messages, model=model_to_use)
+                            response = response_data.get('content', [])[0].get('text', "")
+                            success = True
+                            
+                        elif current_provider == "perplexity" and hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False):
+                            # Perplexity API
+                            response_data = self.perplexity_client.generate(messages, model=model_to_use)
+                            response = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
+                            success = True
+                            
+                        else:
+                            # Unsupported provider or unavailable
+                            logger.warning(f"Provider {current_provider} for model {model_to_use} is not available")
+                            raise ValueError(f"Provider {current_provider} is unavailable")
+                            
+                    except Exception as e:
+                        # Log the failure
+                        logger.error(f"Error using model {model_to_use} from {current_provider}: {str(e)}")
+                        
+                        # Mark provider as unavailable if needed
+                        if current_provider in self._provider_status:
+                            self._provider_status[current_provider] = False
+                            logger.info(f"Marked provider {current_provider} as unavailable")
+                        
+                        # Check if we have any fallback models left
+                        if remaining_fallbacks:
+                            # Get next fallback model that hasn't been attempted yet
+                            next_models = [m for m in remaining_fallbacks if m not in attempted_models]
+                            
+                            if next_models:
+                                model_to_use = next_models[0]
+                                remaining_fallbacks.remove(model_to_use)
+                                provider = self._get_provider_for_model_id(model_to_use)
+                                logger.info(f"Trying fallback model: {model_to_use} from provider: {provider}")
+                            else:
+                                # We've exhausted all fallbacks, use Venice as last resort
+                                venice_default = "mistral-31-24b"  # Venice default model
+                                logger.warning(f"All fallback models failed, using Venice default model {venice_default} as last resort")
+                                model_to_use = venice_default
+                                provider = "venice"
+                                
+                                try:
+                                    # Last attempt with Venice default model
+                                    response = self.venice_client.generate(messages, model=model_to_use)
+                                    success = True
+                                except Exception as final_error:
+                                    # Even Venice failed - this is a critical error
+                                    logger.critical(f"Critical: All models including Venice default model failed: {final_error}")
+                                    response = "I apologize, but I'm currently experiencing technical difficulties. Please try again later."
+                                    success = False
+                                    break
+                        else:
+                            # No fallbacks configured, try Venice directly
+                            venice_default = "mistral-31-24b"  # Venice default model
+                            logger.warning(f"No fallback models available, using Venice default model {venice_default}")
+                            model_to_use = venice_default
+                            provider = "venice"
+                            
+                            try:
+                                # Last attempt with Venice default model
+                                response = self.venice_client.generate(messages, model=model_to_use)
+                                success = True
+                            except Exception as final_error:
+                                # Even Venice failed - this is a critical error
+                                logger.critical(f"Critical: Venice default model failed with no fallbacks: {final_error}")
+                                response = "I apologize, but I'm currently experiencing technical difficulties. Please try again later."
+                                success = False
+                                break
         except Exception as e:
             logger.error(f"Error generating response with {provider} model {model_to_use}: {str(e)}")
             # Fallback to default model if available
@@ -393,6 +460,12 @@ class Agent:
         
         # Calculate latency
         latency = time.time() - start_time
+        
+        # Ensure we have a response defined in all cases
+        if 'response' not in locals() or response is None:
+            response = "I apologize, but I'm having technical difficulties. Please try again later."
+            success = False
+            logger.critical("Critical: No response was generated through any model")
         
         # Update model performance metrics
         self._update_model_performance(model_to_use, success, latency)
@@ -1116,6 +1189,118 @@ class Agent:
         
         # Log quality score
         logger.info(f"Model {model} quality score: {quality_score}, avg: {model_record.average_quality}")
+    
+    def _get_fallback_models(self, current_provider: str, current_model: str, query_type: str) -> List[str]:
+        """
+        Get a list of fallback models in case the current model fails
+        
+        Args:
+            current_provider: The provider of the current model
+            current_model: The current model that might fail
+            query_type: Type of query (text, code, image)
+            
+        Returns:
+            List of model IDs to try as fallbacks, in order of preference
+        """
+        from models import ModelPerformance
+        
+        fallback_models = []
+        
+        # We don't want to use the current model as a fallback
+        # First, get models from different providers with good performance for this query type
+        try:
+            # Get available models with good success rate (>80%) ordered by success rate
+            fallback_candidates = ModelPerformance.query.filter(
+                ModelPerformance.model_id != current_model,
+                ModelPerformance.provider != current_provider,
+                ModelPerformance.is_available == True,
+                ModelPerformance.capabilities.like(f"%{query_type}%"),
+                ModelPerformance.total_calls >= 5,  # Only consider models with some usage history
+                ModelPerformance.successful_calls * 100 / ModelPerformance.total_calls >= 80
+            ).order_by(ModelPerformance.successful_calls * 100 / ModelPerformance.total_calls.desc()).all()
+            
+            # Add these high-performing models from other providers to our fallback list
+            for model in fallback_candidates:
+                # Check if this provider is currently available
+                provider = self._get_provider_for_model_id(model.model_id)
+                if self._provider_status.get(provider, False):
+                    fallback_models.append(model.model_id)
+            
+            # If we don't have enough fallbacks yet, add Venice models as they're most reliable
+            if len(fallback_models) < 2:
+                venice_models = ModelPerformance.query.filter(
+                    ModelPerformance.model_id != current_model,
+                    ModelPerformance.provider == "venice",
+                    ModelPerformance.is_available == True,
+                    ModelPerformance.capabilities.like(f"%{query_type}%")
+                ).order_by(ModelPerformance.successful_calls * 100 / ModelPerformance.total_calls.desc()).all()
+                
+                for model in venice_models:
+                    if model.model_id not in fallback_models:
+                        fallback_models.append(model.model_id)
+            
+            # If we still don't have fallbacks, add any available model as last resort
+            if len(fallback_models) == 0:
+                last_resort_models = ModelPerformance.query.filter(
+                    ModelPerformance.model_id != current_model,
+                    ModelPerformance.is_available == True,
+                    ModelPerformance.capabilities.like(f"%{query_type}%")
+                ).all()
+                
+                for model in last_resort_models:
+                    provider = self._get_provider_for_model_id(model.model_id)
+                    if self._provider_status.get(provider, False):
+                        fallback_models.append(model.model_id)
+                        
+            # Always ensure the original Venice default model is included as final fallback
+            venice_default = "mistral-31-24b"  # Default Venice model if all else fails
+            if venice_default not in fallback_models and venice_default != current_model:
+                fallback_models.append(venice_default)
+                
+            return fallback_models
+                
+        except Exception as e:
+            logger.error(f"Error getting fallback models: {str(e)}")
+            
+            # In case of database error, return a hardcoded fallback list
+            # This ensures the system remains operational even if DB queries fail
+            hardcoded_fallbacks = []
+            
+            # Add fallbacks from each provider that isn't the current one
+            if current_provider != "venice":
+                hardcoded_fallbacks.append("mistral-31-24b")  # Venice fallback
+            if current_provider != "anthropic" and self._provider_status.get("anthropic", False):
+                hardcoded_fallbacks.append("claude-3-5-haiku-20241022")  # Anthropic fallback
+            if current_provider != "perplexity" and self._provider_status.get("perplexity", False):
+                hardcoded_fallbacks.append("llama-3.1-sonar-small-128k-online")  # Perplexity fallback
+                
+            return hardcoded_fallbacks
+    
+    def _get_provider_for_model_id(self, model_id: str) -> str:
+        """
+        Get the provider for a model ID
+        
+        Args:
+            model_id: The model ID
+            
+        Returns:
+            Provider string (venice, anthropic, perplexity, etc.)
+        """
+        from models import ModelPerformance
+        
+        # First check the database
+        model_record = ModelPerformance.query.filter_by(model_id=model_id).first()
+        if model_record:
+            return model_record.provider
+            
+        # If not in database, try to determine from model ID pattern
+        if model_id.startswith("claude-"):
+            return "anthropic"
+        elif model_id.startswith("llama-"):
+            return "perplexity"
+        else:
+            # Default to Venice
+            return "venice"
     
     def get_models_performance(self) -> Dict[str, Dict]:
         """
