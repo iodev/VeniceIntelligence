@@ -251,7 +251,7 @@ def register_external_node():
         return jsonify({"error": "Agent API is not initialized"}), 500
     
     try:
-        data = request.json
+        data = request.json if request.json else {}
         node_id = data.get('node_id')
         node_info = data.get('node_info', {})
         
@@ -312,7 +312,8 @@ def manage_models():
         return jsonify({"error": "Agent is not initialized"}), 500
     
     try:
-        action = request.json.get('action')
+        data = request.json if request.json else {}
+        action = data.get('action')
         
         if action == 'refresh':
             # Refresh available models from all providers
@@ -325,8 +326,8 @@ def manage_models():
             
         elif action == 'deprecate':
             # Mark a specific model as deprecated
-            provider = request.json.get('provider')
-            model_id = request.json.get('model_id')
+            provider = data.get('provider')
+            model_id = data.get('model_id')
             
             if not provider or not model_id:
                 return jsonify({"error": "Provider and model ID are required"}), 400
@@ -349,8 +350,8 @@ def manage_models():
                 
         elif action == 'restore':
             # Restore a deprecated model
-            provider = request.json.get('provider')
-            model_id = request.json.get('model_id')
+            provider = data.get('provider')
+            model_id = data.get('model_id')
             
             if not provider or not model_id:
                 return jsonify({"error": "Provider and model ID are required"}), 400
@@ -392,7 +393,7 @@ def generate_image():
         return jsonify({"error": "Image generation client is not initialized"}), 500
     
     try:
-        data = request.json
+        data = request.json if request.json else {}
         prompt = data.get('prompt', '')
         model = data.get('model', 'stable-diffusion-xl-1024-v1-0')
         size = data.get('size', '1024x1024')
