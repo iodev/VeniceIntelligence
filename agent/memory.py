@@ -108,12 +108,52 @@ class MemoryManager:
                             
                             # Safely extract vector size
                             try:
-                                vectors_config = collection_info.config.params.vectors
-                                # Handle different response formats
-                                if isinstance(vectors_config, dict) and 'size' in vectors_config:
-                                    current_vector_size = vectors_config['size']
-                                elif hasattr(vectors_config, 'size'):
-                                    current_vector_size = vectors_config.size
+                                if hasattr(collection_info, 'config') and hasattr(collection_info.config, 'params'):
+                                    # Extract config data as a dictionary to handle various structures
+                                    config_dict = {}
+                                    
+                                    # Convert config to dictionary if it has __dict__ attribute
+                                    if hasattr(collection_info, 'config'):
+                                        if hasattr(collection_info.config, '__dict__'):
+                                            config_dict = collection_info.config.__dict__
+                                        elif isinstance(collection_info.config, dict):
+                                            config_dict = collection_info.config
+                                    
+                                    # Try to find vector size by accessing properties safely
+                                    try:
+                                        # Try dict approach first
+                                        if 'params' in config_dict:
+                                            params = config_dict['params']
+                                            
+                                            # If params is a dict
+                                            if isinstance(params, dict) and 'vectors' in params:
+                                                vectors_data = params['vectors']
+                                                
+                                                # Case 1: Direct size in dict
+                                                if isinstance(vectors_data, dict) and 'size' in vectors_data:
+                                                    current_vector_size = int(vectors_data['size'])
+                                                
+                                                # Case 2: List of dicts with size
+                                                elif isinstance(vectors_data, list) and len(vectors_data) > 0:
+                                                    for item in vectors_data:
+                                                        if isinstance(item, dict) and 'size' in item:
+                                                            current_vector_size = int(item['size'])
+                                                            break
+                                    except (TypeError, KeyError, AttributeError, ValueError) as e:
+                                        logger.debug(f"Error in dictionary approach to find vector size: {e}")
+                                    
+                                    # Attempt object attribute approach if needed
+                                    if current_vector_size is None:
+                                        try:
+                                            if hasattr(collection_info.config.params, 'vectors'):
+                                                vectors = collection_info.config.params.vectors
+                                                if hasattr(vectors, 'size'):
+                                                    current_vector_size = int(vectors.size)
+                                        except (AttributeError, ValueError) as e:
+                                            logger.debug(f"Error in attribute approach to find vector size: {e}")
+                                    
+                                    # Log what we found for debugging
+                                    logger.debug(f"Extracted vector size: {current_vector_size}")
                             except Exception as e:
                                 logger.warning(f"Error accessing vector size: {e}")
                                 
