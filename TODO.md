@@ -8,17 +8,17 @@
 
 ## Priority 2: Method Implementation Issues (By Folder)
 ### agent/api.py
-- Fix LSP error for ModelPerformance constructor in register_model method (lines 70-77)
-- Fix incorrect UsageCost constructor call (lines 699-707)
+- [✓] Fix LSP error for ModelPerformance constructor in register_model method (lines 70-77) (FIXED: already correctly implemented with object initialization first)
+- [✓] Fix incorrect UsageCost constructor call (lines 699-707) (FIXED: already correctly implemented with object initialization first)
 
 ### agent/core.py
-- Fix LSP error for ModelPerformance constructor in init_default_models (lines 39-47)
+- [✓] Fix LSP error for ModelPerformance constructor in init_default_models (lines 39-47) (FIXED: added missing required properties like provider, capabilities, context_window, and display_name)
 - Fix LSP error for ModelPerformance constructor in _record_query method (lines 851-859)
 - Implement streaming response handler for non-Venice providers
 
 ### agent/cost_control.py
-- Fix constructor calls for CostControlStrategy, UsageCost, and ModelEfficiency
-- Fix reference errors to prioritize_cost, prioritize_speed, and prioritize_accuracy attributes (lines 335-337)
+- [✓] Fix constructor calls for CostControlStrategy, UsageCost, and ModelEfficiency (FIXED: updated all constructors to initialize objects first then set attributes)
+- [✓] Fix reference errors to prioritize_cost, prioritize_speed, and prioritize_accuracy attributes (lines 335-337) (FIXED: added null checks before accessing attributes)
 
 ### agent/memory.py
 - Fix QdrantClient dependency issues (possibly unbound error)

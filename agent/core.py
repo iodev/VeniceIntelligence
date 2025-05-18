@@ -38,12 +38,16 @@ def init_default_models():
     for model_id in default_models:
         model = ModelPerformance()
         model.model_id = model_id
+        model.provider = "venice"  # Default provider
         model.total_calls = 0
         model.successful_calls = 0
         model.total_latency = 0.0
         model.quality_score = 0.0
         model.quality_evaluations = 0
         model.is_current = (model_id == "mistral-31-24b")  # Set the default model
+        model.capabilities = "text"  # Default capability
+        model.context_window = 8192  # Default context window
+        model.display_name = model_id  # Default display name
         db.session.add(model)
     
     db.session.commit()
