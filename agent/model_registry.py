@@ -2,47 +2,50 @@
 Model Registry System for tracking all available models across providers
 
 This module provides a centralized registry for managing model metadata,
-capabilities, and performance across different AI providers.
+capabilities, and performance across different AI providers without requiring
+database schema changes.
 """
 
 import logging
 from typing import Dict, List, Any, Optional, Set, Tuple
 from datetime import datetime, timedelta
 import json
-from sqlalchemy import desc, asc, func, or_, and_
+import os
+import threading
+import re
 
-from models import db, ModelPerformance
+from sqlalchemy import func, or_, text
+from models import ModelPerformance, db
 from agent.models import VeniceClient
-from agent.anthropic_client import AnthropicClient
-from agent.perplexity import PerplexityClient
-from agent.huggingface_client import HuggingFaceClient
 
 logger = logging.getLogger(__name__)
 
+# In-memory registry data
+_deprecated_models = {}  # model_id -> reason
+_model_metadata = {}  # model_id -> extra metadata
+_provider_clients = {}  # provider -> client
+_provider_status = {
+    "venice": True,
+    "anthropic": False,
+    "perplexity": False,
+    "huggingface": False
+}
+_last_refresh = {}  # provider -> timestamp
+_registry_lock = threading.RLock()
+
 class ModelRegistry:
     """
-    Centralized registry for tracking AI models across providers and managing their metadata
+    Centralized registry for tracking AI models across providers 
+    and managing their metadata
     
-    This class handles:
-    - Model registration and discovery
-    - Capability tracking and filtering
-    - Status management (available, deprecated, etc.)
-    - Provider-specific metadata storage
-    - Centralized query interface for model selection
+    This class maintains both database and in-memory model information
+    to provide a complete registry without modifying the database schema.
     """
     
     def __init__(self):
         """Initialize the model registry system"""
-        self.providers = {
-            "venice": True,
-            "anthropic": False,
-            "perplexity": False,
-            "huggingface": False
-        }
-        self.clients = {}
-        self.last_refresh = {}
-        self.discovery_in_progress = False
-        self._discovery_errors = {}
+        # We're using module-level variables for thread safety
+        pass
     
     def register_client(self, provider: str, client: Any) -> bool:
         """
@@ -55,14 +58,15 @@ class ModelRegistry:
         Returns:
             Success status
         """
-        if provider not in self.providers:
-            logger.warning(f"Attempted to register unknown provider: {provider}")
-            return False
-            
-        self.clients[provider] = client
-        self.providers[provider] = True
-        logger.info(f"Registered client for provider: {provider}")
-        return True
+        with _registry_lock:
+            if provider not in _provider_status:
+                logger.warning(f"Attempted to register unknown provider: {provider}")
+                return False
+                
+            _provider_clients[provider] = client
+            _provider_status[provider] = True
+            logger.info(f"Registered client for provider: {provider}")
+            return True
     
     def get_model_capabilities(self, model_id: str) -> Set[str]:
         """
@@ -95,20 +99,28 @@ class ModelRegistry:
         Returns:
             List of model info dictionaries
         """
-        # Using string contains for capability filter
+        # Query models with the required capability - using LIKE operator for string contains
         capability_filter = f"%{capability}%"
         models = ModelPerformance.query.filter(
-            ModelPerformance.capabilities.contains(capability),
-            (ModelPerformance.successful_calls / func.nullif(ModelPerformance.total_calls, 0)) >= min_success_rate
+            ModelPerformance.capabilities.like(capability_filter)
         ).all()
         
         result = []
         for model in models:
-            # Calculate success rate with null safety
+            # Skip deprecated models
+            if model.model_id in _deprecated_models:
+                continue
+                
+            # Calculate success rate
             success_rate = 0
             if model.total_calls > 0:
                 success_rate = model.successful_calls / model.total_calls
                 
+            # Apply success rate filter
+            if success_rate < min_success_rate:
+                continue
+                
+            # Add model to results
             result.append({
                 "model_id": model.model_id,
                 "provider": model.provider,
@@ -117,7 +129,9 @@ class ModelRegistry:
                 "average_latency": (model.total_latency / model.total_calls) if model.total_calls > 0 else 0,
                 "capabilities": model.capabilities.split(',') if model.capabilities else [],
                 "context_window": model.context_window,
-                "display_name": model.display_name
+                "display_name": model.display_name,
+                "is_deprecated": model.model_id in _deprecated_models,
+                "metadata": _model_metadata.get(model.model_id, {})
             })
             
         return result
@@ -133,96 +147,60 @@ class ModelRegistry:
         Returns:
             Dictionary with discovery results
         """
-        if self.discovery_in_progress:
-            logger.warning("Model discovery already in progress, skipping")
-            return {"status": "in_progress", "message": "Discovery already in progress"}
-            
-        self.discovery_in_progress = True
-        results = {"discovered": 0, "updated": 0, "errors": 0, "details": {}}
-        
-        try:
-            providers_to_check = [provider] if provider else list(self.providers.keys())
+        with _registry_lock:
+            if provider is not None and provider not in _provider_status:
+                return {"status": "error", "message": f"Unknown provider: {provider}"}
+                
+            providers_to_check = [provider] if provider else list(_provider_status.keys())
+            results = {"discovered": 0, "updated": 0, "errors": 0, "details": {}}
             
             for provider_name in providers_to_check:
                 # Skip providers that aren't registered or available
-                if provider_name not in self.clients or not self.providers.get(provider_name, False):
+                if provider_name not in _provider_clients or not _provider_status.get(provider_name, False):
                     logger.warning(f"Provider {provider_name} not available for discovery")
                     results["details"][provider_name] = "Provider not available"
                     continue
                     
                 # Check if we need to refresh based on time
-                last_check = self.last_refresh.get(provider_name, datetime.min)
+                last_check = _last_refresh.get(provider_name, datetime.min)
                 if not force and datetime.now() - last_check < timedelta(hours=24):
                     logger.info(f"Skipping {provider_name} discovery (cache valid)")
                     results["details"][provider_name] = "Using cached data"
                     continue
                 
-                # Get the appropriate discovery method for this provider
-                result = self._discover_provider_models(provider_name)
+                # Call the appropriate discovery method
+                if provider_name == "venice":
+                    provider_result = self._discover_venice_models()
+                elif provider_name == "anthropic":
+                    provider_result = self._discover_anthropic_models()
+                elif provider_name == "perplexity":
+                    provider_result = self._discover_perplexity_models()
+                elif provider_name == "huggingface":
+                    provider_result = self._discover_huggingface_models()
+                else:
+                    provider_result = {"status": "error", "message": f"Unknown provider: {provider_name}"}
                 
                 # Update results
-                results["discovered"] += result.get("discovered", 0)
-                results["updated"] += result.get("updated", 0)
-                results["errors"] += result.get("errors", 0)
-                results["details"][provider_name] = result.get("message", "Completed")
+                results["discovered"] += provider_result.get("discovered", 0)
+                results["updated"] += provider_result.get("updated", 0)
+                results["errors"] += provider_result.get("errors", 0)
+                results["details"][provider_name] = provider_result.get("message", "Completed")
                 
                 # Update last refresh time on success
-                if result.get("success", False):
-                    self.last_refresh[provider_name] = datetime.now()
+                if provider_result.get("status") == "success":
+                    _last_refresh[provider_name] = datetime.now()
             
             results["status"] = "success"
             return results
-            
-        except Exception as e:
-            logger.error(f"Error during model discovery: {str(e)}")
-            results["status"] = "error"
-            results["message"] = str(e)
-            return results
-        finally:
-            self.discovery_in_progress = False
-    
-    def _discover_provider_models(self, provider: str) -> Dict[str, Any]:
-        """
-        Discover models for a specific provider
-        
-        Args:
-            provider: Provider name
-            
-        Returns:
-            Discovery result details
-        """
-        result = {"discovered": 0, "updated": 0, "errors": 0, "success": False}
-        
-        if provider == "venice":
-            # Venice uses direct API methods for discovery
-            result = self._discover_venice_models()
-            
-        elif provider == "anthropic":
-            # Anthropic doesn't have a models endpoint, use Perplexity to get info
-            result = self._discover_anthropic_models()
-            
-        elif provider == "perplexity":
-            # Perplexity has standard models we can register
-            result = self._discover_perplexity_models()
-            
-        elif provider == "huggingface":
-            # Hugging Face has too many models, we register only what we use
-            result = self._discover_huggingface_models()
-            
-        else:
-            result["message"] = f"Unknown provider: {provider}"
-            
-        return result
     
     def _discover_venice_models(self) -> Dict[str, Any]:
         """Discover models from Venice.ai"""
-        result = {"discovered": 0, "updated": 0, "errors": 0, "success": False}
+        result = {"status": "success", "discovered": 0, "updated": 0, "errors": 0}
         
         try:
-            client = self.clients.get("venice")
+            client = _provider_clients.get("venice")
             if not client:
-                result["message"] = "Venice client not registered"
-                return result
+                return {"status": "error", "message": "Venice client not registered"}
                 
             # Get text models
             text_models = client.list_models(type="text")
@@ -235,13 +213,12 @@ class ModelRegistry:
             result["discovered"] += len(image_models)
             
             result["message"] = f"Successfully discovered {result['discovered']} Venice models"
-            result["success"] = True
             
         except Exception as e:
             logger.error(f"Error discovering Venice models: {str(e)}")
             result["errors"] += 1
             result["message"] = f"Error: {str(e)}"
-            self._discovery_errors["venice"] = str(e)
+            result["status"] = "error"
             
         return result
     
@@ -284,24 +261,28 @@ class ModelRegistry:
                 model.total_latency = 0
                 model.quality_score = 0
                 model.quality_evaluations = 0
-                model.is_deprecated = False
                 db.session.add(model)
+                
+            # Store additional metadata
+            _model_metadata[model_id] = {
+                "display_name": model_info.get("display_name", model_id),
+                "last_updated": datetime.now().isoformat()
+            }
                 
         db.session.commit()
     
     def _discover_anthropic_models(self) -> Dict[str, Any]:
         """Discover models from Anthropic"""
-        result = {"discovered": 0, "updated": 0, "errors": 0, "success": False}
+        result = {"status": "success", "discovered": 0, "updated": 0, "errors": 0}
         
         try:
             # Use direct API connection if available
-            client = self.clients.get("anthropic")
+            client = _provider_clients.get("anthropic")
             if not client:
-                result["message"] = "Anthropic client not registered"
-                return result
+                return {"status": "error", "message": "Anthropic client not registered"}
             
             # Try using Perplexity to obtain Anthropic model info
-            perplexity_client = self.clients.get("perplexity")
+            perplexity_client = _provider_clients.get("perplexity")
             if perplexity_client:
                 model_info = perplexity_client.get_anthropic_models()
                 discovered_models = model_info.get("models", [])
@@ -329,13 +310,11 @@ class ModelRegistry:
                         model_obj.total_latency = 0
                         model_obj.quality_score = 0
                         model_obj.quality_evaluations = 0
-                        model_obj.is_deprecated = False
                         db.session.add(model_obj)
                         result["discovered"] += 1
                 
                 db.session.commit()
                 result["message"] = f"Discovered {result['discovered']} Anthropic models"
-                result["success"] = True
             else:
                 # Register known models
                 known_models = [
@@ -363,25 +342,23 @@ class ModelRegistry:
                         model_obj.total_latency = 0
                         model_obj.quality_score = 0
                         model_obj.quality_evaluations = 0
-                        model_obj.is_deprecated = False
                         db.session.add(model_obj)
                         result["discovered"] += 1
                 
                 db.session.commit()
                 result["message"] = f"Registered {result['discovered']} known Anthropic models"
-                result["success"] = True
                 
         except Exception as e:
             logger.error(f"Error discovering Anthropic models: {str(e)}")
             result["errors"] += 1
             result["message"] = f"Error: {str(e)}"
-            self._discovery_errors["anthropic"] = str(e)
+            result["status"] = "error"
             
         return result
     
     def _discover_perplexity_models(self) -> Dict[str, Any]:
         """Discover models from Perplexity"""
-        result = {"discovered": 0, "updated": 0, "errors": 0, "success": False}
+        result = {"status": "success", "discovered": 0, "updated": 0, "errors": 0}
         
         try:
             # Standard Perplexity models
@@ -423,25 +400,23 @@ class ModelRegistry:
                     model.total_latency = 0
                     model.quality_score = 0
                     model.quality_evaluations = 0
-                    model.is_deprecated = False
                     db.session.add(model)
                     result["discovered"] += 1
             
             db.session.commit()
             result["message"] = f"Registered {result['discovered']} Perplexity models"
-            result["success"] = True
             
         except Exception as e:
             logger.error(f"Error discovering Perplexity models: {str(e)}")
             result["errors"] += 1
             result["message"] = f"Error: {str(e)}"
-            self._discovery_errors["perplexity"] = str(e)
+            result["status"] = "error"
             
         return result
     
     def _discover_huggingface_models(self) -> Dict[str, Any]:
         """Register known HuggingFace models"""
-        result = {"discovered": 0, "updated": 0, "errors": 0, "success": False}
+        result = {"status": "success", "discovered": 0, "updated": 0, "errors": 0}
         
         try:
             # Register a few key models
@@ -474,19 +449,17 @@ class ModelRegistry:
                     model_obj.total_latency = 0
                     model_obj.quality_score = 0
                     model_obj.quality_evaluations = 0
-                    model_obj.is_deprecated = False
                     db.session.add(model_obj)
                     result["discovered"] += 1
             
             db.session.commit()
             result["message"] = f"Registered {result['discovered']} HuggingFace models"
-            result["success"] = True
             
         except Exception as e:
             logger.error(f"Error registering HuggingFace models: {str(e)}")
             result["errors"] += 1
             result["message"] = f"Error: {str(e)}"
-            self._discovery_errors["huggingface"] = str(e)
+            result["status"] = "error"
             
         return result
     
@@ -511,81 +484,51 @@ class ModelRegistry:
         Returns:
             List of best model info dictionaries
         """
+        # Base query with capability filter using LIKE
+        capability_filter = f"%{capability}%"
         query = ModelPerformance.query.filter(
-            ModelPerformance.capabilities.like(f"%{capability}%"),
-            ModelPerformance.is_deprecated == False,
+            ModelPerformance.capabilities.like(capability_filter),
             ModelPerformance.total_calls > 0
         )
         
+        # Apply provider filter if specified
         if provider:
             query = query.filter(ModelPerformance.provider == provider)
         
-        # Apply different sorting based on criteria
-        if criteria == "accuracy":
-            query = query.order_by(desc(ModelPerformance.quality_score))
-        elif criteria == "speed":
-            # Use average latency for sorting
-            query = query.order_by(
-                (ModelPerformance.total_latency / ModelPerformance.total_calls)
-            )
-        elif criteria == "success":
-            # Use success rate for sorting
-            query = query.order_by(
-                desc(ModelPerformance.successful_calls / func.nullif(ModelPerformance.total_calls, 0))
-            )
-        else:  # balanced - combine multiple factors
-            # This is more complex in raw SQL, we'll fetch and sort in memory
-            models = query.all()
+        # Get all matching models
+        models = query.all()
+        
+        # Filter out deprecated models
+        models = [m for m in models if m.model_id not in _deprecated_models]
+        
+        # Create scored list
+        scored_models = []
+        for model in models:
+            if model.total_calls == 0:
+                continue
+                
+            # Calculate normalized scores (0-1)
+            success_rate = model.successful_calls / model.total_calls
+            avg_latency = model.total_latency / model.total_calls
             
-            # Create scored list
-            scored_models = []
-            for model in models:
-                if model.total_calls == 0:
-                    continue
-                    
-                # Calculate normalized scores (0-1)
-                success_rate = model.successful_calls / model.total_calls
-                avg_latency = model.total_latency / model.total_calls
-                
-                # Invert latency so that lower is better (1 = fast, 0 = slow)
-                speed_score = 1.0 - min(1.0, avg_latency / 5.0)  # Normalize to 0-1 (5s is worst)
-                
-                # Combined score with weights
+            # Invert latency so that lower is better (1 = fast, 0 = slow)
+            speed_score = 1.0 - min(1.0, avg_latency / 5.0)  # Normalize to 0-1 (5s is worst)
+            
+            # Combined score based on specified criteria
+            if criteria == "accuracy":
+                combined_score = model.quality_score
+            elif criteria == "speed":
+                combined_score = speed_score
+            elif criteria == "success":
+                combined_score = success_rate
+            else:  # balanced
                 combined_score = (
                     (model.quality_score * 0.4) +  # 40% quality weight
                     (success_rate * 0.3) +         # 30% success rate weight
                     (speed_score * 0.3)            # 30% speed weight
                 )
-                
-                scored_models.append({
-                    "model_id": model.model_id,
-                    "provider": model.provider,
-                    "success_rate": success_rate,
-                    "quality_score": model.quality_score,
-                    "average_latency": avg_latency,
-                    "capabilities": model.capabilities.split(',') if model.capabilities else [],
-                    "context_window": model.context_window,
-                    "display_name": model.display_name,
-                    "combined_score": combined_score
-                })
             
-            # Sort by combined score
-            sorted_models = sorted(scored_models, key=lambda x: x["combined_score"], reverse=True)
-            return sorted_models[:limit]
-        
-        # For simple criteria, use the query directly
-        models = query.limit(limit).all()
-        
-        result = []
-        for model in models:
-            # Calculate metrics
-            success_rate = 0
-            avg_latency = 0
-            if model.total_calls > 0:
-                success_rate = model.successful_calls / model.total_calls
-                avg_latency = model.total_latency / model.total_calls
-                
-            result.append({
+            scored_models.append({
                 "model_id": model.model_id,
                 "provider": model.provider,
                 "success_rate": success_rate,
@@ -593,10 +536,14 @@ class ModelRegistry:
                 "average_latency": avg_latency,
                 "capabilities": model.capabilities.split(',') if model.capabilities else [],
                 "context_window": model.context_window,
-                "display_name": model.display_name
+                "display_name": model.display_name,
+                "combined_score": combined_score,
+                "metadata": _model_metadata.get(model.model_id, {})
             })
-            
-        return result
+        
+        # Sort by combined score
+        sorted_models = sorted(scored_models, key=lambda x: x["combined_score"], reverse=True)
+        return sorted_models[:limit]
     
     def deprecate_model(self, model_id: str, reason: str = None) -> bool:
         """
@@ -609,18 +556,16 @@ class ModelRegistry:
         Returns:
             Success status
         """
-        model = ModelPerformance.query.filter_by(model_id=model_id).first()
-        if not model:
-            logger.warning(f"Attempted to deprecate unknown model: {model_id}")
-            return False
-            
-        model.is_deprecated = True
-        model.deprecation_reason = reason
-        db.session.add(model)
-        db.session.commit()
-        
-        logger.info(f"Model {model_id} marked as deprecated. Reason: {reason}")
-        return True
+        with _registry_lock:
+            model = ModelPerformance.query.filter_by(model_id=model_id).first()
+            if not model:
+                logger.warning(f"Attempted to deprecate unknown model: {model_id}")
+                return False
+                
+            # Mark as deprecated in our registry
+            _deprecated_models[model_id] = reason or "Manually deprecated"
+            logger.info(f"Model {model_id} marked as deprecated. Reason: {reason}")
+            return True
     
     def restore_model(self, model_id: str) -> bool:
         """
@@ -632,18 +577,20 @@ class ModelRegistry:
         Returns:
             Success status
         """
-        model = ModelPerformance.query.filter_by(model_id=model_id).first()
-        if not model:
-            logger.warning(f"Attempted to restore unknown model: {model_id}")
-            return False
-            
-        model.is_deprecated = False
-        model.deprecation_reason = None
-        db.session.add(model)
-        db.session.commit()
-        
-        logger.info(f"Model {model_id} restored from deprecated status")
-        return True
+        with _registry_lock:
+            model = ModelPerformance.query.filter_by(model_id=model_id).first()
+            if not model:
+                logger.warning(f"Attempted to restore unknown model: {model_id}")
+                return False
+                
+            # Remove from deprecated list
+            if model_id in _deprecated_models:
+                del _deprecated_models[model_id]
+                logger.info(f"Model {model_id} restored from deprecated status")
+                return True
+            else:
+                logger.info(f"Model {model_id} was not deprecated")
+                return False
     
     def get_all_models(self, include_deprecated: bool = False) -> List[Dict[str, Any]]:
         """
@@ -655,15 +602,15 @@ class ModelRegistry:
         Returns:
             List of all model info dictionaries
         """
-        query = ModelPerformance.query
-        
-        if not include_deprecated:
-            query = query.filter(ModelPerformance.is_deprecated == False)
-            
-        models = query.all()
+        # Get all models from database
+        models = ModelPerformance.query.all()
         
         result = []
         for model in models:
+            # Skip deprecated models if not requested
+            if not include_deprecated and model.model_id in _deprecated_models:
+                continue
+                
             # Calculate success rate with null safety
             success_rate = 0
             avg_latency = 0
@@ -682,8 +629,9 @@ class ModelRegistry:
                 "capabilities": model.capabilities.split(',') if model.capabilities else [],
                 "context_window": model.context_window,
                 "display_name": model.display_name,
-                "is_deprecated": model.is_deprecated,
-                "deprecation_reason": model.deprecation_reason
+                "is_deprecated": model.model_id in _deprecated_models,
+                "deprecation_reason": _deprecated_models.get(model.model_id),
+                "metadata": _model_metadata.get(model.model_id, {})
             })
             
         return result
@@ -709,21 +657,15 @@ class ModelRegistry:
         Returns:
             List of matching model info dictionaries
         """
+        # Build query
         query = ModelPerformance.query
         
-        if not include_deprecated:
-            query = query.filter(ModelPerformance.is_deprecated == False)
-            
+        # Apply filters
         if provider:
             query = query.filter(ModelPerformance.provider == provider)
             
         if capability:
             query = query.filter(ModelPerformance.capabilities.like(f"%{capability}%"))
-            
-        if min_success_rate > 0:
-            query = query.filter(
-                (ModelPerformance.successful_calls / func.nullif(ModelPerformance.total_calls, 0)) >= min_success_rate
-            )
             
         if min_quality_score > 0:
             query = query.filter(ModelPerformance.quality_score >= min_quality_score)
@@ -736,16 +678,25 @@ class ModelRegistry:
                 )
             )
             
+        # Get all models
         models = query.all()
         
         result = []
         for model in models:
+            # Skip deprecated models if not requested
+            if not include_deprecated and model.model_id in _deprecated_models:
+                continue
+                
             # Calculate metrics
             success_rate = 0
             avg_latency = 0
             if model.total_calls > 0:
                 success_rate = model.successful_calls / model.total_calls
                 avg_latency = model.total_latency / model.total_calls
+                
+            # Skip if below success rate threshold
+            if success_rate < min_success_rate:
+                continue
                 
             result.append({
                 "model_id": model.model_id,
@@ -756,8 +707,9 @@ class ModelRegistry:
                 "capabilities": model.capabilities.split(',') if model.capabilities else [],
                 "context_window": model.context_window,
                 "display_name": model.display_name,
-                "is_deprecated": model.is_deprecated,
-                "deprecation_reason": model.deprecation_reason
+                "is_deprecated": model.model_id in _deprecated_models,
+                "deprecation_reason": _deprecated_models.get(model.model_id),
+                "metadata": _model_metadata.get(model.model_id, {})
             })
             
         return result
@@ -769,7 +721,7 @@ class ModelRegistry:
         Returns:
             Dictionary of provider status (provider_name: is_active)
         """
-        return dict(self.providers)
+        return dict(_provider_status)
         
     def set_provider_status(self, provider: str, status: bool) -> bool:
         """
@@ -782,13 +734,14 @@ class ModelRegistry:
         Returns:
             Success status
         """
-        if provider not in self.providers:
-            logger.warning(f"Attempted to set status for unknown provider: {provider}")
-            return False
-            
-        self.providers[provider] = status
-        logger.info(f"Provider {provider} status set to: {status}")
-        return True
+        with _registry_lock:
+            if provider not in _provider_status:
+                logger.warning(f"Attempted to set status for unknown provider: {provider}")
+                return False
+                
+            _provider_status[provider] = status
+            logger.info(f"Provider {provider} status set to: {status}")
+            return True
         
     def update_model_stats(self, model_id: str, success: bool, latency: float) -> bool:
         """
@@ -853,7 +806,35 @@ class ModelRegistry:
             Discovery status information
         """
         return {
-            "in_progress": self.discovery_in_progress,
-            "last_refresh": self.last_refresh,
-            "errors": self._discovery_errors
+            "last_refresh": {k: v.isoformat() if isinstance(v, datetime) else str(v) 
+                           for k, v in _last_refresh.items()},
+            "deprecated_models": len(_deprecated_models),
+            "model_metadata": len(_model_metadata),
+            "provider_status": dict(_provider_status)
         }
+    
+    def get_model_registry_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics about the model registry
+        
+        Returns:
+            Statistics about the registry
+        """
+        models_by_provider = {}
+        total_models = 0
+        
+        for provider in _provider_status.keys():
+            count = ModelPerformance.query.filter_by(provider=provider).count()
+            models_by_provider[provider] = count
+            total_models += count
+            
+        return {
+            "total_models": total_models,
+            "models_by_provider": models_by_provider,
+            "deprecated_models": len(_deprecated_models),
+            "active_providers": sum(1 for v in _provider_status.values() if v)
+        }
+
+
+# Create a global registry instance
+registry = ModelRegistry()

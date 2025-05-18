@@ -23,6 +23,9 @@ class ModelPerformance(db.Model):
     created_at = db.Column(DateTime, default=datetime.utcnow)
     updated_at = db.Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # For model registry without schema changes
+    registry_metadata = {}
+    
     def __init__(self, model_id=None, provider="venice", capabilities="text", 
                  context_window=8192, cost_per_1k_tokens=0.0, display_name=None):
         """
@@ -41,7 +44,7 @@ class ModelPerformance(db.Model):
         self.capabilities = capabilities
         self.context_window = context_window
         self.cost_per_1k_tokens = cost_per_1k_tokens
-        self.display_name = display_name
+        self.display_name = display_name or model_id
         
         # Initialize counters and metrics
         self.total_calls = 0
@@ -49,6 +52,8 @@ class ModelPerformance(db.Model):
         self.total_latency = 0.0
         self.quality_score = 0.0
         self.quality_evaluations = 0
+        
+        # Initialize status flags
         self.is_current = False
         self.is_available = True
     

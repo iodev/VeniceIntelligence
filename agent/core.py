@@ -10,7 +10,7 @@ from agent.models import VeniceClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
 from agent.evaluation import evaluate_model_response
-from agent.registry import ModelRegistry
+from agent.model_registry import registry as model_registry
 from models import ModelPerformance, UsageCost
 import config
 from flask import current_app
@@ -132,8 +132,8 @@ class Agent:
         self.available_models = available_models
         self.cost_monitor = CostMonitor()
         
-        # Create model registry 
-        self.model_registry = ModelRegistry()
+        # Use the global model registry
+        self.model_registry = model_registry
         
         # Try to initialize additional API clients if keys are available
         # Initialize Perplexity client first as Anthropic can use it for model discovery
