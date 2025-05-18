@@ -389,3 +389,35 @@ class PerplexityClient:
         except Exception as e:
             logger.error(f"Error fetching Anthropic models from Perplexity: {str(e)}")
             return []
+            
+    def get_anthropic_models(self) -> Dict[str, Any]:
+        """
+        Get current Anthropic models using Perplexity's web access
+        
+        Returns:
+            Dictionary with model information
+        """
+        models = self.fetch_current_anthropic_models()
+        
+        # Convert to dictionary format for registry
+        if not models:
+            # Fallback to default models if Perplexity can't fetch them
+            models = [
+                {
+                    "id": "claude-3-5-sonnet-20241022",
+                    "name": "Claude 3.5 Sonnet",
+                    "context_window": 200000,
+                    "provider": "anthropic"
+                },
+                {
+                    "id": "claude-3-7-sonnet-20241022",
+                    "name": "Claude 3.7 Sonnet",
+                    "context_window": 200000,
+                    "provider": "anthropic"
+                }
+            ]
+        
+        return {
+            "models": [model["id"] for model in models],
+            "details": models
+        }
