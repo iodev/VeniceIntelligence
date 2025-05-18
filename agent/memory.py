@@ -50,13 +50,31 @@ class MemoryManager:
         self.venice_client = venice_client
         
         # Initialize Qdrant client if available
+        self.using_qdrant = False
+        self.client = None
+        
+        # Set up local storage as fallback
+        self.local_storage = []
+        
+        # Try to use Qdrant if available
         if QDRANT_AVAILABLE and qdrant_url:
             try:
+                # Initialize with proper error handling
+                from qdrant_client import QdrantClient
+                from qdrant_client.http import models as qdrant_models
+                
                 self.client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+                
                 # Check if collection exists with the correct vector size, recreate if necessary
-                collections = self.client.get_collections().collections
-                collection_names = [c.name for c in collections]
+                collections_response = self.client.get_collections()
+                if not hasattr(collections_response, 'collections'):
+                    logger.warning("Unexpected response format from Qdrant get_collections()")
+                    raise AttributeError("Response object has no 'collections' attribute")
+                    
+                collections = collections_response.collections
+                collection_names = [c.name for c in collections if hasattr(c, 'name')]
                 create_new_collection = False
+                self.using_qdrant = True
                 
                 if collection_name not in collection_names:
                     logger.info(f"Collection {collection_name} not found, will create it")
@@ -212,7 +230,11 @@ class MemoryManager:
                     query_vector=query_embedding,
                     limit=limit
                 )
-                return [point.payload for point in search_result]
+                
+                # Ensure we properly handle the response
+                if search_result is not None and len(search_result) > 0:
+                    return [point.payload if hasattr(point, 'payload') else point.get('payload', {}) for point in search_result]
+                return []
             else:
                 # Local vector search
                 if not self.local_storage:
