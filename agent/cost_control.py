@@ -33,25 +33,24 @@ class CostMonitor:
         """Initialize default cost control strategy if none exists"""
         strategy = CostControlStrategy.query.filter_by(active=True).first()
         if not strategy:
-            default_strategy = CostControlStrategy(
-                name="Default Balanced Strategy",
-                description="Balances cost, speed, and accuracy with slight preference for accuracy",
-                daily_budget=5.0,  # $5 per day
-                budget_reset_at=datetime.utcnow(),
-                text_task_mapping=json.dumps({
-                    "general": "llama-3.1-sonar-small-128k-online",
-                    "creative": "claude-3-sonnet-20240229",
-                    "analytical": "mistral-31-24b"
-                }),
-                code_task_mapping=json.dumps({
-                    "general": "mistral-31-24b",
-                    "python": "llama-3.2-3b", 
-                    "javascript": "llama-3.2-3b"
-                }),
-                image_task_mapping=json.dumps({
-                    "general": "stable-diffusion-xl-1024-v1-0"
-                })
-            )
+            default_strategy = CostControlStrategy()
+            default_strategy.name = "Default Balanced Strategy"
+            default_strategy.description = "Balances cost, speed, and accuracy with slight preference for accuracy"
+            default_strategy.daily_budget = 5.0  # $5 per day
+            default_strategy.budget_reset_at = datetime.utcnow()
+            default_strategy.text_task_mapping = json.dumps({
+                "general": "llama-3.1-sonar-small-128k-online",
+                "creative": "claude-3-sonnet-20240229",
+                "analytical": "mistral-31-24b"
+            })
+            default_strategy.code_task_mapping = json.dumps({
+                "general": "mistral-31-24b",
+                "python": "llama-3.2-3b", 
+                "javascript": "llama-3.2-3b"
+            })
+            default_strategy.image_task_mapping = json.dumps({
+                "general": "stable-diffusion-xl-1024-v1-0"
+            })
             
             db.session.add(default_strategy)
             db.session.commit()
@@ -153,20 +152,19 @@ class CostMonitor:
         tokens_per_dollar_total = (request_tokens + response_tokens) / cost if cost > 0 else 0
         
         # Create usage record
-        usage = UsageCost(
-            model_id=model_id,
-            provider=provider,
-            request_tokens=request_tokens,
-            response_tokens=response_tokens,
-            total_tokens=request_tokens + response_tokens,
-            cost=cost,
-            request_type=request_type,
-            query_id=query_id,
-            agent_id=agent_id,
-            tokens_per_dollar_input=tokens_per_dollar_input,
-            tokens_per_dollar_output=tokens_per_dollar_output,
-            tokens_per_dollar_total=tokens_per_dollar_total
-        )
+        usage = UsageCost()
+        usage.model_id = model_id
+        usage.provider = provider
+        usage.request_tokens = request_tokens
+        usage.response_tokens = response_tokens
+        usage.total_tokens = request_tokens + response_tokens
+        usage.cost = cost
+        usage.request_type = request_type
+        usage.query_id = query_id
+        usage.agent_id = agent_id
+        usage.tokens_per_dollar_input = tokens_per_dollar_input
+        usage.tokens_per_dollar_output = tokens_per_dollar_output
+        usage.tokens_per_dollar_total = tokens_per_dollar_total
         
         # Update strategy current spending
         if self._current_strategy:
@@ -215,12 +213,11 @@ class CostMonitor:
         ).first()
         
         if not efficiency:
-            efficiency = ModelEfficiency(
-                model_id=model_id,
-                provider=provider,
-                task_type=task_type,
-                samples_count=0
-            )
+            efficiency = ModelEfficiency()
+            efficiency.model_id = model_id
+            efficiency.provider = provider
+            efficiency.task_type = task_type
+            efficiency.samples_count = 0
             db.session.add(efficiency)
         
         # Calculate tokens per second
@@ -455,13 +452,12 @@ class CostMonitor:
         ).first()
         
         if not efficiency:
-            efficiency = ModelEfficiency(
-                model_id=model_id,
-                provider=provider,
-                task_type=task_type,
-                samples_count=1,
-                accuracy_score=accuracy_score
-            )
+            efficiency = ModelEfficiency()
+            efficiency.model_id = model_id
+            efficiency.provider = provider
+            efficiency.task_type = task_type
+            efficiency.samples_count = 1
+            efficiency.accuracy_score = accuracy_score
             db.session.add(efficiency)
         else:
             # Update rolling average
