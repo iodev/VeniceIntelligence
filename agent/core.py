@@ -1,13 +1,16 @@
 import logging
 import random
 import time
+import re
 from typing import Dict, List, Tuple, Optional, Any
 from datetime import datetime
+from sqlalchemy import func, desc
 from agent.memory import MemoryManager
 from agent.models import VeniceClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
 from agent.evaluation import evaluate_model_response
+from models import ModelPerformance, UsageCost
 import config
 from flask import current_app
 
@@ -904,12 +907,127 @@ class Agent:
             
         logger.info(f"Provider status: {self._provider_status}")
 
+    def _calculate_confidence_score(self, query: str, system_prompt: str, query_type: str) -> float:
+        """
+        Calculate a confidence score that determines if a query benefits from using
+        multiple providers for higher accuracy
+        
+        This uses a sophisticated scoring system that evaluates query attributes
+        and adapts to different query types.
+        
+        Args:
+            query: The user's query
+            system_prompt: System instructions for the agent
+            query_type: Type of query (text, code, image)
+            
+        Returns:
+            Confidence score between 0.0 and 1.0 where higher values suggest
+            greater benefit from using multiple providers
+        """
+        import re
+        
+        # Base factors - common to all query types
+        base_score = 0.0
+        
+        # 1. Keyword analysis - check for specific indicators of complex or important requests
+        accuracy_keywords = {
+            # High importance keywords
+            "critical": 0.15, "important": 0.12, "accurate": 0.15, "precise": 0.15, "exact": 0.15,
+            # Complexity keywords
+            "complex": 0.12, "difficult": 0.10, "analyze": 0.08, "compare": 0.08, 
+            # Domain-specific keywords
+            "scientific": 0.12, "research": 0.10, "academic": 0.10,
+            "evaluate": 0.08, "math": 0.10, "calculation": 0.10,
+            "financial": 0.12, "medical": 0.15, "legal": 0.15, 
+            "technical": 0.10, "engineering": 0.10
+        }
+        
+        # Evaluate keyword matches with partial matching and context awareness
+        keyword_score = 0.0
+        for keyword, weight in accuracy_keywords.items():
+            # Check for direct match or word boundary match (avoiding partial word matches)
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            if re.search(pattern, query.lower()):
+                keyword_score += weight
+        
+        # Cap keyword score at 0.3 maximum contribution
+        keyword_score = min(0.3, keyword_score)
+        
+        # 2. Query complexity analysis - evaluate structural complexity
+        # Length-based complexity (0.0-0.2)
+        length_score = min(0.2, len(query) / 1000)
+        
+        # Structural complexity - sentences, questions, and request structure (0.0-0.2)
+        sentence_count = len(re.split(r'[.!?;]', query))
+        question_count = len(re.findall(r'\?', query))
+        structural_score = min(0.2, (sentence_count * 0.05) + (question_count * 0.03))
+        
+        # 3. Domain-specific factors based on query type
+        domain_score = 0.0
+        if query_type == "code":
+            # Code queries benefit more from multiple providers when they involve:
+            code_keywords = ["debug", "optimize", "refactor", "architecture", "design pattern"]
+            code_matches = sum(1 for kw in code_keywords if kw.lower() in query.lower())
+            domain_score = min(0.2, code_matches * 0.05)
+            
+            # Longer code requests also benefit from multiple providers
+            code_length_factor = min(0.1, len(query) / 800)
+            domain_score += code_length_factor
+            
+        elif query_type == "image":
+            # Image generation generally less suited for multiple providers
+            domain_score = 0.05
+            
+        else:  # text queries
+            # Text queries with specific attributes may benefit more:
+            creative_pattern = r'\b(creative|story|write|narrative|poem|fiction)\b'
+            factual_pattern = r'\b(fact|statistic|historical|science|explain|how does|why does)\b'
+            
+            if re.search(creative_pattern, query.lower()):
+                # Creative queries benefit from diverse models
+                domain_score += 0.15
+            if re.search(factual_pattern, query.lower()):
+                # Factual queries benefit from multiple providers for verification
+                domain_score += 0.20
+                
+        # 4. System prompt analysis
+        system_score = 0.0
+        if system_prompt:
+            # Complex system prompts suggest more specialized tasks
+            system_score = min(0.15, len(system_prompt) / 1200)
+            
+            # Check for specific requirements in system prompt
+            accuracy_pattern = r'\b(accurate|precise|exact|correct|verified|factual)\b'
+            if re.search(accuracy_pattern, system_prompt.lower()):
+                system_score += 0.1
+        
+        # 5. Historical performance-based scoring (basic implementation)
+        history_score = 0.05  # Small baseline score that would be adjusted based on historical data
+        
+        # Combine all factors with appropriate weights
+        base_score = (
+            (keyword_score * 0.25) +       # 25% keyword relevance
+            (length_score * 0.10) +        # 10% length complexity
+            (structural_score * 0.15) +    # 15% structural complexity
+            (domain_score * 0.25) +        # 25% domain-specific factors
+            (system_score * 0.15) +        # 15% system prompt analysis 
+            (history_score * 0.10)         # 10% historical performance
+        )
+        
+        # Log detailed scoring for debugging and improvement
+        logger.debug(f"Confidence scoring: keyword={keyword_score:.2f}, length={length_score:.2f}, "
+                   f"structure={structural_score:.2f}, domain={domain_score:.2f}, "
+                   f"system={system_score:.2f}, history={history_score:.2f}, total={base_score:.2f}")
+        
+        return base_score
+    
     def _requires_high_accuracy(self, query: str, system_prompt: str, query_type: str) -> bool:
         """
         Determine if a query requires high accuracy and should use multiple providers
         
         The agent learns over time which types of queries benefit from multiple providers.
-        This is a heuristic approach based on keywords, query complexity, and past performance.
+        This is a sophisticated evaluation based on confidence scoring, budget constraints,
+        and provider availability.
         
         Args:
             query: The user's query
@@ -921,6 +1039,7 @@ class Agent:
         """
         # Avoid using high accuracy mode if we don't have multiple available providers
         if not self._has_multiple_available_providers():
+            logger.info("Not enough available providers for high accuracy mode")
             return False
             
         # Only enable high accuracy mode if budget allows
@@ -933,48 +1052,27 @@ class Agent:
                 logger.error(f"Error checking high accuracy budget: {str(e)}")
                 return False
         
-        # Keywords that suggest high accuracy is needed
-        high_accuracy_keywords = [
-            "important", "critical", "crucial", "exact", "precise", 
-            "accuracy", "accurate", "factual", "verify", "validate",
-            "double-check", "ensure", "proof", "technical", "math",
-            "medical", "legal", "financial", "analysis", "compare",
-            "research", "investigate", "detailed", "complex"
-        ]
+        # Calculate confidence score to determine if multiple providers would be beneficial
+        confidence_score = self._calculate_confidence_score(query, system_prompt, query_type)
         
-        # Check for high accuracy keywords in query
-        for keyword in high_accuracy_keywords:
-            if keyword.lower() in query.lower():
-                logger.info(f"High accuracy mode triggered by keyword: {keyword}")
-                return True
-                
-        # Check for high accuracy markers in system prompt
-        system_accuracy_indicators = [
-            "accuracy is critical", "high accuracy", "precise",
-            "factual correctness", "verification", "critical system"
-        ]
+        # Adapt threshold based on query type, costs, and other factors
+        base_threshold = 0.45  # Default threshold
         
-        for indicator in system_accuracy_indicators:
-            if indicator.lower() in system_prompt.lower():
-                logger.info(f"High accuracy mode triggered by system prompt indicator: {indicator}")
-                return True
-                
-        # Check query length - longer queries often benefit from multiple providers
-        if len(query.split()) > 50:  # Arbitrary threshold for longer queries
-            # For long queries, use high accuracy mode with some probability
-            # This lets the agent explore the value of using multiple providers
-            if random.random() < 0.3:  # 30% chance for long queries
-                logger.info("High accuracy mode triggered for long query")
-                return True
-                
-        # Code queries may benefit from multiple providers
-        if query_type == "code" and len(query.split()) > 30:
-            if random.random() < 0.4:  # 40% chance for code queries
-                logger.info("High accuracy mode triggered for code query")
-                return True
-                
-        # Default to not using high accuracy mode to reduce cost
-        return False
+        # Adjust threshold based on query type
+        if query_type == "code":
+            threshold = base_threshold + 0.05  # Higher threshold for code
+        elif query_type == "image":
+            threshold = base_threshold + 0.15  # Much higher threshold for image
+        else:
+            threshold = base_threshold
+        
+        # Log decision for monitoring
+        use_high_accuracy = confidence_score >= threshold
+        
+        logger.info(f"High accuracy decision: score={confidence_score:.2f}, "
+                   f"threshold={threshold:.2f}, result={'YES' if use_high_accuracy else 'NO'}")
+        
+        return use_high_accuracy
         
     def _has_multiple_available_providers(self) -> bool:
         """
@@ -1062,6 +1160,7 @@ class Agent:
                 
             try:
                 # Use the most recent model from our dynamic discovery
+                from models import ModelPerformance
                 anthropic_models = ModelPerformance.query.filter_by(provider="anthropic").all()
                 anthropic_model = "claude-3-7-sonnet-20241022"  # Default to latest model
                 
