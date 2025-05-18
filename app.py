@@ -141,7 +141,8 @@ def stream_chat(query, system_prompt, query_type="text"):
     def generate():
         try:
             if agent_api is None:
-                yield 'data: {"error": "Agent API is not initialized", "type": "error"}\n\n'
+                error_json = json.dumps({"error": "Agent API is not initialized", "type": "error"})
+                yield f'data: {error_json}\n\n'
                 return
                 
             # Request streaming response from the API layer
@@ -154,7 +155,6 @@ def stream_chat(query, system_prompt, query_type="text"):
             )
             
             if result.get('status') != 'success':
-                import json
                 error_json = json.dumps({"error": result.get("error", "Unknown error"), "type": "error"})
                 yield f'data: {error_json}\n\n'
                 return
@@ -163,22 +163,24 @@ def stream_chat(query, system_prompt, query_type="text"):
             response_stream = result.get('response_stream')
             
             if not response_stream:
-                yield f'data: {{"error": "No response stream available", "type": "error"}}\n\n'
+                error_json = json.dumps({"error": "No response stream available", "type": "error"})
+                yield f'data: {error_json}\n\n'
                 return
                 
             # Stream the response chunks to the client
             for chunk in response_stream:
                 if not chunk:
                     continue
-                import json
                 chunk_json = json.dumps({"chunk": chunk, "type": "chunk"})
                 yield f'data: {chunk_json}\n\n'
                 
             # Signal that we're done
-            yield 'data: {"done": true, "type": "done"}\n\n'
+            done_json = json.dumps({"done": True, "type": "end"})
+            yield f'data: {done_json}\n\n'
         except Exception as e:
             logger.error(f"Error streaming chat: {str(e)}")
-            yield f'data: {{"error": "{str(e)}", "type": "error"}}\n\n'
+            error_json = json.dumps({"error": str(e), "type": "error"})
+            yield f'data: {error_json}\n\n'
     
     return Response(stream_with_context(generate()), mimetype='text/event-stream')
 
