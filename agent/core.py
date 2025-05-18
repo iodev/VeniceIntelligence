@@ -9,6 +9,8 @@ from agent.memory import MemoryManager
 from agent.models import VeniceClient
 from agent.perplexity import PerplexityClient
 from agent.anthropic_client import AnthropicClient
+from agent.openai_client import OpenAIClient
+from agent.content_classifier import ContentClassifier
 from agent.evaluation import evaluate_model_response
 from agent.model_registry import registry as model_registry
 from models import ModelPerformance, UsageCost
