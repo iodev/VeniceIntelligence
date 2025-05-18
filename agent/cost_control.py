@@ -404,27 +404,35 @@ class CostMonitor:
         current_spending = self._current_strategy.current_spending
         cost_threshold = self._current_strategy.cost_threshold
         
-        spent_ratio = current_spending / daily_budget if daily_budget > 0 else 1.0
+        # Calculate budget ratio (how much of our daily budget we've used)
+        budget_ratio = current_spending / daily_budget if daily_budget > 0 else 1.0
         
-        # If we've spent over threshold percentage, don't use high accuracy mode
-        if spent_ratio > cost_threshold:
-            logger.info(f"Budget threshold exceeded ({spent_ratio:.2f}), disabling high accuracy mode")
+        # If we're over the cost threshold, don't use high accuracy mode
+        if budget_ratio >= cost_threshold:
+            logger.info(f"Budget ratio {budget_ratio:.1%} exceeds threshold {cost_threshold:.1%}, disabling high accuracy mode")
             return False
             
-        # For very complex queries, allow high accuracy even with moderate budget constraints
-        if query_complexity > 0.8 and spent_ratio < 0.9:
-            return True
+        # If query is simple, don't waste resources on high accuracy mode
+        # Only use it for complex queries (above 0.7 complexity)
+        if query_complexity < 0.7:
+            logger.info(f"Query complexity {query_complexity:.2f} below threshold, using standard accuracy mode")
+            return False
             
-        # For moderately complex queries, be more conservative
-        if query_complexity > 0.5 and spent_ratio < 0.7:
-            return True
-            
-        # For simple queries, only use high accuracy if we have plenty of budget
-        if spent_ratio < 0.4:
-            return True
-            
-        # Default to conservative approach
-        return False
+        # Calculate remaining budget headroom
+        remaining_budget_ratio = 1.0 - (budget_ratio / cost_threshold)
+        
+        # Scale probability with remaining budget and query complexity
+        # Higher complexity and more budget = higher chance of using high accuracy
+        probability = remaining_budget_ratio * query_complexity
+        
+        # Use high accuracy mode with scaled probability 
+        # (ensures we use it sparingly but more often for complex queries)
+        use_high_accuracy = probability > 0.6
+        
+        if use_high_accuracy:
+            logger.info(f"Enabling high accuracy mode: query complexity={query_complexity:.2f}, budget={budget_ratio:.1%}/{cost_threshold:.1%}")
+        
+        return use_high_accuracy
         
     def update_model_accuracy(self, model_id: str, provider: str, 
                              task_type: str, accuracy_score: float):
