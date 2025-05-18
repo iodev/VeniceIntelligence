@@ -34,11 +34,11 @@
 
 ## Priority 3: Enhancements to Complete
 - [✓] Fix format_timestamp filter missing in history.html template (FIXED: added Jinja2 filter implementation)
-- [ ] Complete the integration of dynamic model discovery between Perplexity and Anthropic - MEDIUM PRIORITY
-- [ ] Add utility to randomly select models for testing/evaluation - LOW PRIORITY
-- [ ] Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance) - LOW PRIORITY
-- [ ] Implement proper fallback mechanisms when primary model fails - MEDIUM PRIORITY
+- [ ] Complete the integration of dynamic model discovery between Perplexity and Anthropic - HIGH PRIORITY
+- [ ] Implement proper fallback mechanisms when primary model fails - HIGH PRIORITY
 - [ ] Standardize streaming response format across all providers - MEDIUM PRIORITY
+- [ ] Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance) - LOW PRIORITY
+- [ ] Add utility to randomly select models for testing/evaluation - LOW PRIORITY
 
 ## Priority 4: Suggested Enhancements
 - [ ] Add parallel query execution for high-accuracy mode - LOW PRIORITY
