@@ -553,6 +553,186 @@ class Agent:
         
         return "\n\n".join(context_parts)
     
+    def randomly_select_model_for_evaluation(self, selection_mode: str = "balanced", 
+                                     filter_criteria: dict = None, 
+                                     exclude_current: bool = True) -> str:
+        """
+        Utility for randomly selecting models with various strategies for testing/evaluation
+        
+        Args:
+            selection_mode: Strategy for selection
+                - 'uniform': Completely random selection with equal probability
+                - 'weighted': Probability weighted by inverse of evaluation count
+                - 'balanced': Balanced approach considering capabilities & provider distribution
+                - 'least_evaluated': Prioritize least evaluated models
+                - 'provider_balanced': Ensure even distribution across providers
+            filter_criteria: Optional dictionary of criteria to filter models
+                - 'provider': List of providers to include
+                - 'capabilities': List of required capabilities
+                - 'min_success_rate': Minimum success rate threshold
+            exclude_current: Whether to exclude the current model
+            
+        Returns:
+            Selected model ID
+        """
+        from models import ModelPerformance
+        import random
+        
+        # Get all models with their evaluation counts from the database
+        models_data = {}
+        
+        # Fetch all model data from database
+        db_models = ModelPerformance.query.all()
+        
+        for model in db_models:
+            models_data[model.model_id] = {
+                'provider': model.provider,
+                'capabilities': model.capabilities.split(',') if model.capabilities else ['text'],
+                'total_calls': model.total_calls,
+                'successful_calls': model.successful_calls,
+                'quality_evaluations': model.quality_evaluations,
+                'success_rate': model.success_rate,
+                'is_available': model.is_available
+            }
+        
+        # Add any available models that aren't yet in the database
+        for model_id in self.available_models:
+            if model_id not in models_data:
+                # Get provider from internal mapping or default to venice
+                provider = self._get_provider_for_model_id(model_id)
+                models_data[model_id] = {
+                    'provider': provider,
+                    'capabilities': ['text'],  # Default capability
+                    'total_calls': 0,
+                    'successful_calls': 0,
+                    'quality_evaluations': 0,
+                    'success_rate': 0.0,
+                    'is_available': True
+                }
+        
+        # Start with all available models
+        candidates = []
+        for model_id, data in models_data.items():
+            # Skip current model if flagged
+            if exclude_current and model_id == self.current_model:
+                continue
+                
+            # Skip unavailable models
+            if not data['is_available']:
+                continue
+                
+            # Apply filter criteria if provided
+            if filter_criteria:
+                # Filter by provider
+                if 'provider' in filter_criteria and data['provider'] not in filter_criteria['provider']:
+                    continue
+                    
+                # Filter by capabilities
+                if 'capabilities' in filter_criteria:
+                    if not all(cap in data['capabilities'] for cap in filter_criteria['capabilities']):
+                        continue
+                        
+                # Filter by success rate
+                if 'min_success_rate' in filter_criteria and data['success_rate'] < filter_criteria['min_success_rate']:
+                    continue
+            
+            # Add qualifying model to candidates
+            candidates.append(model_id)
+        
+        # If no candidates, return current model
+        if not candidates:
+            logger.warning("No models meet the selection criteria, using current model")
+            return self.current_model
+            
+        # Apply selection strategy
+        if selection_mode == "uniform":
+            # Completely random selection with equal probability
+            return random.choice(candidates)
+            
+        elif selection_mode == "weighted":
+            # Weight by inverse of evaluation count (less evaluated = higher probability)
+            weights = []
+            for model_id in candidates:
+                evals = models_data[model_id]['quality_evaluations']
+                # Add small constant to prevent division by zero
+                weight = 1.0 / (evals + 0.1)
+                weights.append(weight)
+                
+            # Normalize weights
+            total = sum(weights)
+            norm_weights = [w/total for w in weights]
+            
+            return random.choices(candidates, weights=norm_weights, k=1)[0]
+            
+        elif selection_mode == "least_evaluated":
+            # Sort by evaluation count (ascending) and pick from the least evaluated 25%
+            sorted_candidates = sorted(candidates, 
+                                    key=lambda x: models_data[x]['quality_evaluations'])
+            
+            # Take the 25% least evaluated models
+            selection_size = max(1, len(sorted_candidates) // 4)
+            least_evaluated = sorted_candidates[:selection_size]
+            
+            return random.choice(least_evaluated)
+            
+        elif selection_mode == "provider_balanced":
+            # Group by provider
+            provider_groups = {}
+            for model_id in candidates:
+                provider = models_data[model_id]['provider']
+                if provider not in provider_groups:
+                    provider_groups[provider] = []
+                provider_groups[provider].append(model_id)
+                
+            # Select a provider randomly
+            providers = list(provider_groups.keys())
+            if not providers:
+                return random.choice(candidates)  # Fallback
+                
+            selected_provider = random.choice(providers)
+            
+            # Select a model from that provider
+            return random.choice(provider_groups[selected_provider])
+            
+        else:  # "balanced" mode (default)
+            # Balanced approach with some randomness
+            # 1. First 30% chance: completely random
+            # 2. 40% chance: weighted by inverse eval count
+            # 3. 30% chance: provider balanced
+            
+            choice = random.random()
+            
+            if choice < 0.3:
+                # 30% random
+                return random.choice(candidates)
+            elif choice < 0.7:
+                # 40% weighted by inverse eval count
+                weights = []
+                for model_id in candidates:
+                    evals = models_data[model_id]['quality_evaluations']
+                    weight = 1.0 / (evals + 0.1)
+                    weights.append(weight)
+                    
+                total = sum(weights)
+                norm_weights = [w/total for w in weights]
+                
+                return random.choices(candidates, weights=norm_weights, k=1)[0]
+            else:
+                # 30% provider balanced
+                provider_groups = {}
+                for model_id in candidates:
+                    provider = models_data[model_id]['provider']
+                    if provider not in provider_groups:
+                        provider_groups[provider] = []
+                    provider_groups[provider].append(model_id)
+                    
+                providers = list(provider_groups.keys())
+                if not providers:
+                    return random.choice(candidates)  # Fallback
+                    
+                selected_provider = random.choice(providers)
+                return random.choice(provider_groups[selected_provider])
+
     def _select_model_for_evaluation(self) -> str:
         """
         Select a model for evaluation using an adaptive approach:
@@ -596,12 +776,8 @@ class Agent:
             if candidates:
                 return candidates[0]  # Return first unevaluated model
         
-        # All models have some evaluation - use a weighted probability approach
-        # that gradually transitions from round-robin to criteria-based selection
-        
-        # Calculate the minimum evaluation count needed for full criteria-based selection
-        # (We'll use 10 evaluations as a threshold for considering a model fully evaluated)
-        FULL_EVALUATION_THRESHOLD = 10
+        # If enough models have been evaluated, use our new random selection utility
+        EVAL_THRESHOLD = 5  # If average evals > 5, transition to new utility
         
         # Calculate average evaluation count 
         eval_counts = [
@@ -609,6 +785,21 @@ class Agent:
             for model_id in self.available_models
         ]
         avg_evals = sum(eval_counts) / len(eval_counts) if eval_counts else 0
+        
+        # If we've done enough evaluations, use the new utility with a balanced approach
+        if avg_evals >= EVAL_THRESHOLD:
+            logger.info("Using balanced random selection utility")
+            return self.randomly_select_model_for_evaluation(
+                selection_mode="balanced", 
+                exclude_current=True
+            )
+        
+        # All models have some evaluation - use a weighted probability approach
+        # that gradually transitions from round-robin to criteria-based selection
+        
+        # Calculate the minimum evaluation count needed for full criteria-based selection
+        # (We'll use 10 evaluations as a threshold for considering a model fully evaluated)
+        FULL_EVALUATION_THRESHOLD = 10
         
         # If average evaluations are still low, bias towards round-robin
         if avg_evals < FULL_EVALUATION_THRESHOLD:
@@ -809,7 +1000,7 @@ class Agent:
         
     def _query_multiple_providers(self, messages: list, query_type: str) -> Tuple[str, str, str]:
         """
-        Query multiple providers and combine the results for high accuracy
+        Query multiple providers in parallel and combine the results for high accuracy
         
         Args:
             messages: List of message objects for providers
@@ -818,74 +1009,142 @@ class Agent:
         Returns:
             Tuple of (response, model_used, provider_used)
         """
+        import concurrent.futures
+        import time
+        
         responses = []
+        start_time = time.time()
         
-        # Always include Venice as primary provider
-        try:
-            venice_response = self.venice_client.generate(messages, model=self.current_model)
-            responses.append({
-                "provider": "venice",
-                "model": self.current_model,
-                "response": venice_response,
-                "success": True
-            })
-        except Exception as e:
-            logger.error(f"Error with Venice API: {str(e)}")
+        # Define provider query functions
+        def query_venice():
+            try:
+                venice_response = self.venice_client.generate(messages, model=self.current_model)
+                return {
+                    "provider": "venice",
+                    "model": self.current_model,
+                    "response": venice_response,
+                    "success": True,
+                    "latency": time.time() - start_time
+                }
+            except Exception as e:
+                logger.error(f"Error with Venice API: {str(e)}")
+                return {
+                    "provider": "venice",
+                    "model": self.current_model,
+                    "response": "",
+                    "success": False,
+                    "error": str(e),
+                    "latency": time.time() - start_time
+                }
         
-        # Try Perplexity if available
-        if hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False):
+        def query_perplexity():
+            if not (hasattr(self, 'perplexity_client') and self.perplexity_client and self._provider_status.get("perplexity", False)):
+                return None
+                
             try:
                 perplexity_model = "llama-3.1-sonar-small-128k-online"  # Use consistent model
                 response_data = self.perplexity_client.generate(messages, model=perplexity_model)
                 content = response_data.get('choices', [{}])[0].get('message', {}).get('content', "")
-                responses.append({
+                return {
                     "provider": "perplexity",
                     "model": perplexity_model,
                     "response": content,
-                    "success": True
-                })
+                    "success": True,
+                    "latency": time.time() - start_time
+                }
             except Exception as e:
                 logger.error(f"Error with Perplexity API in multi-provider mode: {str(e)}")
+                return None
         
-        # Try Anthropic if available
-        if hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False):
+        def query_anthropic():
+            if not (hasattr(self, 'anthropic_client') and self.anthropic_client and self._provider_status.get("anthropic", False)):
+                return None
+                
             try:
-                anthropic_model = "claude-3-sonnet-20240229"  # Use consistent model
+                # Use the most recent model from our dynamic discovery
+                anthropic_models = ModelPerformance.query.filter_by(provider="anthropic").all()
+                anthropic_model = "claude-3-7-sonnet-20241022"  # Default to latest model
+                
+                # If we have discovered models, use the first available
+                if anthropic_models:
+                    anthropic_model = anthropic_models[0].model_id
+                
                 response_data = self.anthropic_client.generate(messages, model=anthropic_model)
                 content = ""
                 if 'content' in response_data and len(response_data['content']) > 0:
-                    content = response_data['content'][0].get('text', "")
-                responses.append({
+                    if isinstance(response_data['content'], list):
+                        content = response_data['content'][0].get('text', "")
+                    elif isinstance(response_data['content'], str):
+                        content = response_data['content']
+                        
+                return {
                     "provider": "anthropic",
                     "model": anthropic_model, 
                     "response": content,
-                    "success": True
-                })
+                    "success": True,
+                    "latency": time.time() - start_time
+                }
             except Exception as e:
                 logger.error(f"Error with Anthropic API in multi-provider mode: {str(e)}")
-                
+                return None
+        
+        # Execute provider queries in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            # Start all provider queries in parallel
+            future_to_provider = {
+                executor.submit(query_venice): "venice",
+                executor.submit(query_perplexity): "perplexity",
+                executor.submit(query_anthropic): "anthropic"
+            }
+            
+            # Set a timeout for all queries (30 seconds)
+            timeout = 30
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_provider, timeout=timeout):
+                provider_name = future_to_provider[future]
+                try:
+                    result = future.result()
+                    if result:
+                        responses.append(result)
+                        logger.info(f"Received response from {provider_name} in {result.get('latency', 0):.2f} seconds")
+                except Exception as exc:
+                    logger.error(f"{provider_name} generated an exception: {exc}")
+        
+        logger.info(f"Parallel query completed in {time.time() - start_time:.2f} seconds with {len(responses)} responses")
+        
         # If we have multiple responses, combine them or select the best
         if len(responses) > 1:
-            logger.info(f"Received {len(responses)} responses in multi-provider mode")
+            logger.info(f"Received {len(responses)} responses in parallel multi-provider mode")
             
-            # For now, use Venice as primary and only use other providers to enhance it
-            # In a more sophisticated implementation, we could compare and merge them
+            # First, sort responses by success and then by latency
+            successful_responses = [r for r in responses if r.get("success", False)]
             
-            primary_response = next((r for r in responses if r["provider"] == "venice"), responses[0])
-            
-            # Track that we used multiple providers for this query
-            self._track_multi_provider_usage(query_type, len(responses))
-            
-            # Return primary response (typically Venice)
-            return primary_response["response"], primary_response["model"], primary_response["provider"]
+            if successful_responses:
+                # Sort successful responses by latency (faster responses first)
+                sorted_responses = sorted(successful_responses, key=lambda x: x.get("latency", float('inf')))
+                
+                # Priority to Venice (our primary provider) if successful
+                primary_response = next((r for r in sorted_responses if r["provider"] == "venice"), sorted_responses[0])
+                
+                # Track that we used multiple providers for this query
+                self._track_multi_provider_usage(query_type, len(responses))
+                
+                # Return primary response
+                return primary_response["response"], primary_response["model"], primary_response["provider"]
             
         # If only one response or no responses, use it or fall back to default
         if len(responses) == 1:
             return responses[0]["response"], responses[0]["model"], responses[0]["provider"]
         else:
             # Fallback in case all providers failed
-            response = self.venice_client.generate(messages, model=self.current_model)
-            return response, self.current_model, "venice"
+            try:
+                response = self.venice_client.generate(messages, model=self.current_model)
+                return response, self.current_model, "venice"
+            except Exception as e:
+                logger.error(f"All providers failed, and fallback to Venice also failed: {e}")
+                # Last resort fallback message
+                return "I apologize, but I'm currently experiencing technical difficulties. Please try again in a moment.", self.current_model, "fallback"
             
     def _track_multi_provider_usage(self, query_type: str, provider_count: int) -> None:
         """

@@ -37,12 +37,12 @@
 - [✓] Complete the integration of dynamic model discovery between Perplexity and Anthropic - HIGH PRIORITY (FIXED: implemented _register_provider_models method and automatic model registration for both Perplexity and Anthropic)
 - [✓] Implement proper fallback mechanisms when primary model fails - HIGH PRIORITY (FIXED: implemented sophisticated fallback selection based on model performance metrics with multiple fallback paths for resilience)
 - [✓] Standardize streaming response format across all providers - MEDIUM PRIORITY (FIXED: implemented consistent streaming format with timeout handling, error recovery, and completion signaling for all providers)
-- [ ] Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance) - LOW PRIORITY
-- [ ] Add utility to randomly select models for testing/evaluation - LOW PRIORITY
+- [✓] Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance) - LOW PRIORITY (FIXED: implemented proper constructors with meaningful default values and documentation for all data model classes)
+- [✓] Add utility to randomly select models for testing/evaluation - LOW PRIORITY (FIXED: implemented sophisticated random model selection utility with multiple strategies including uniform, weighted, least-evaluated, provider-balanced, and smart balanced selection)
 
 ## Priority 4: Suggested Enhancements
-- [ ] Add parallel query execution for high-accuracy mode - LOW PRIORITY
-- [ ] Implement confidence scoring system to determine when multiple providers should be used - LOW PRIORITY
+- [✓] Add parallel query execution for high-accuracy mode - MEDIUM PRIORITY (FIXED: implemented concurrent.futures ThreadPoolExecutor for parallel execution of queries across multiple providers with timeout handling, latency tracking, and enhanced error recovery)
+- [ ] Implement confidence scoring system to determine when multiple providers should be used - MEDIUM PRIORITY
 - [ ] Create a model registry system that tracks all available models across providers - LOW PRIORITY
 - [ ] Add performance metrics dashboard for comparing model efficiency - LOW PRIORITY
 - [ ] Implement automatic deprecation of underperforming models - LOW PRIORITY
