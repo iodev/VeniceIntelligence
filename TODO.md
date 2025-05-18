@@ -5,6 +5,7 @@
 - [✓] Fix undeclared/undefined `cost_monitor` reference in app.py's update_strategy route (line 522) (FIXED: replaced with agent.cost_monitor references)
 - [✓] Fix `'Agent' object has no attribute 'model_performance'` error in the agent core module (FIXED: updated _get_best_model to use database directly instead of the local model_performance dictionary)
 - [✓] Implement missing can_use_high_accuracy_mode method in CostMonitor class (FIXED: implemented the method with budget and complexity-based logic to determine when to use high accuracy mode)
+- [✓] Implement conversation continuity between queries (FIXED: added session tracking and conversation history maintenance)
 
 ## Priority 2: Method Implementation Issues (By Folder)
 ### agent/api.py
@@ -21,30 +22,30 @@
 - [✓] Fix reference errors to prioritize_cost, prioritize_speed, and prioritize_accuracy attributes (lines 335-337) (FIXED: added null checks before accessing attributes)
 
 ### agent/memory.py
-- Fix QdrantClient dependency issues (possibly unbound error)
-- Resolve type errors in search response handling for Qdrant results (line 215)
-- Fix Payload type incompatibility with Dict[str, Any] return type
+- [ ] Fix QdrantClient dependency issues (possibly unbound error) - HIGH PRIORITY
+- [ ] Resolve type errors in search response handling for Qdrant results (line 215) - HIGH PRIORITY
+- [ ] Fix Payload type incompatibility with Dict[str, Any] return type - HIGH PRIORITY
 
 ### agent/perplexity.py
 - [✓] Standardize stream response handling with other clients (FIXED: streaming implementation already matches the standardized approach)
 
 ### agent/models.py
-- Ensure streaming implementation is working correctly with error handling (warning seen in logs)
+- [ ] Ensure streaming implementation is working correctly with error handling (warning seen in logs) - MEDIUM PRIORITY
 
 ## Priority 3: Enhancements to Complete
-- Complete the integration of dynamic model discovery between Perplexity and Anthropic
-- Add utility to randomly select models for testing/evaluation
-- Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance)
-- Implement proper fallback mechanisms when primary model fails
-- Standardize streaming response format across all providers
-- Fix format_timestamp filter missing in history.html template
+- [✓] Fix format_timestamp filter missing in history.html template (FIXED: added Jinja2 filter implementation)
+- [ ] Complete the integration of dynamic model discovery between Perplexity and Anthropic - MEDIUM PRIORITY
+- [ ] Add utility to randomly select models for testing/evaluation - LOW PRIORITY
+- [ ] Fix constructor issues in data models (CostControlStrategy, UsageCost, ModelEfficiency, ModelPerformance) - LOW PRIORITY
+- [ ] Implement proper fallback mechanisms when primary model fails - MEDIUM PRIORITY
+- [ ] Standardize streaming response format across all providers - MEDIUM PRIORITY
 
 ## Priority 4: Suggested Enhancements
-- Add parallel query execution for high-accuracy mode
-- Implement confidence scoring system to determine when multiple providers should be used
-- Create a model registry system that tracks all available models across providers
-- Add performance metrics dashboard for comparing model efficiency
-- Implement automatic deprecation of underperforming models
+- [ ] Add parallel query execution for high-accuracy mode - LOW PRIORITY
+- [ ] Implement confidence scoring system to determine when multiple providers should be used - LOW PRIORITY
+- [ ] Create a model registry system that tracks all available models across providers - LOW PRIORITY
+- [ ] Add performance metrics dashboard for comparing model efficiency - LOW PRIORITY
+- [ ] Implement automatic deprecation of underperforming models - LOW PRIORITY
 
 ## Folders/Files Reviewed
 - ✓ agent/api.py

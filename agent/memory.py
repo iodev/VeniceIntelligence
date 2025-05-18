@@ -1,7 +1,7 @@
 import logging
 import time
 import json
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Sequence
 import numpy as np
 
 from agent.models import VeniceClient
@@ -15,6 +15,24 @@ try:
 except ImportError:
     logging.warning("Qdrant client not available, using local fallback storage")
     QDRANT_AVAILABLE = False
+    # Create stub classes for type checking when Qdrant is not available
+    class MockQdrantModels:
+        class Distance:
+            COSINE = "cosine"
+        
+        class VectorParams:
+            def __init__(self, size, distance):
+                self.size = size
+                self.distance = distance
+                
+        class PointStruct:
+            def __init__(self, id, vector, payload):
+                self.id = id
+                self.vector = vector
+                self.payload = payload
+    
+    # Create mock models for type checking
+    qdrant_models = MockQdrantModels()
 
 logger = logging.getLogger(__name__)
 
@@ -179,16 +197,19 @@ class MemoryManager:
         try:
             if self.using_qdrant:
                 # Store in Qdrant
-                self.client.upsert(
-                    collection_name=self.collection_name,
-                    points=[
-                        qdrant_models.PointStruct(
-                            id=int(time.time() * 1000),  # Use timestamp as ID
-                            vector=embedding,
-                            payload=payload
-                        )
-                    ]
-                )
+                if self.client is not None:
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=[
+                            qdrant_models.PointStruct(
+                                id=int(time.time() * 1000),  # Use timestamp as ID
+                                vector=embedding,
+                                payload=payload
+                            )
+                        ]
+                    )
+                else:
+                    raise ValueError("Qdrant client is not initialized but using_qdrant is True")
             else:
                 # Store in local storage
                 self.local_id_counter += 1
@@ -224,7 +245,7 @@ class MemoryManager:
         query_embedding = self._get_embedding(query)
         
         try:
-            if self.using_qdrant:
+            if self.using_qdrant and self.client is not None:
                 search_result = self.client.search(
                     collection_name=self.collection_name,
                     query_vector=query_embedding,
@@ -233,7 +254,17 @@ class MemoryManager:
                 
                 # Ensure we properly handle the response
                 if search_result is not None and len(search_result) > 0:
-                    return [point.payload if hasattr(point, 'payload') else point.get('payload', {}) for point in search_result]
+                    # Handle different point types by safely extracting payload
+                    result_list = []
+                    for point in search_result:
+                        if hasattr(point, 'payload'):
+                            result_list.append(point.payload)
+                        elif isinstance(point, dict) and 'payload' in point:
+                            result_list.append(point['payload'])
+                        else:
+                            # Skip invalid points
+                            logger.warning(f"Skipping invalid search result point: {point}")
+                    return result_list
                 return []
             else:
                 # Local vector search
