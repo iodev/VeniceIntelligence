@@ -273,35 +273,70 @@ class AnthropicClient:
                     # Process the streaming response
                     content_buffer = ""
                     
-                    # Create a generator to return
+                    # Create a generator to return with standardized format
                     def content_generator():
                         nonlocal content_buffer
-                        for line in response.iter_lines():
-                            if line:
-                                line_text = line.decode('utf-8')
-                                
-                                # Skip empty lines and "data: [DONE]"
-                                if not line_text or line_text == "data: [DONE]":
-                                    continue
+                        # Initialize variables for monitoring streaming
+                        start_time = time.time()
+                        timeout_seconds = 120  # 2-minute timeout for streaming
+                        
+                        try:
+                            for line in response.iter_lines():
+                                # Check for timeout
+                                if time.time() - start_time > timeout_seconds:
+                                    logger.warning(f"Streaming response timeout after {timeout_seconds} seconds")
+                                    yield "I apologize, but the response stream timed out. Please try again."
+                                    yield "[DONE]"
+                                    break
                                     
-                                # Parse the line
-                                if line_text.startswith('data: '):
+                                if line:
                                     try:
-                                        # Remove the "data: " prefix
-                                        json_str = line_text[6:]
-                                        data = json.loads(json_str)
+                                        line_text = line.decode('utf-8')
                                         
-                                        # Extract content delta if available
-                                        if 'delta' in data and 'content' in data['delta'] and data['delta']['content']:
-                                            content_delta = data['delta']['content']
-                                            content_buffer += content_delta
-                                            yield content_delta
-                                        # Alternative format for completed chunk
-                                        elif 'content' in data and data['content']:
-                                            yield data['content']
-                                    except json.JSONDecodeError as e:
-                                        logger.error(f"Invalid JSON in streaming response: {e}")
-                                        yield f"ERROR: Invalid JSON in streaming response"
+                                        # Skip empty lines and "data: [DONE]"
+                                        if not line_text or line_text == "data: [DONE]":
+                                            continue
+                                            
+                                        # Parse the line
+                                        if line_text.startswith('data: '):
+                                            try:
+                                                # Remove the "data: " prefix
+                                                json_str = line_text[6:]
+                                                data = json.loads(json_str)
+                                                
+                                                # Extract content delta if available
+                                                if 'delta' in data and 'content' in data['delta'] and data['delta']['content']:
+                                                    content_delta = data['delta']['content']
+                                                    content_buffer += content_delta
+                                                    yield content_delta
+                                                # Alternative format for completed chunk
+                                                elif 'content' in data and isinstance(data['content'], list):
+                                                    for content_item in data['content']:
+                                                        if content_item.get('type') == 'text' and 'text' in content_item:
+                                                            content_delta = content_item['text']
+                                                            content_buffer += content_delta
+                                                            yield content_delta
+                                                elif 'content' in data and isinstance(data['content'], str):
+                                                    content_delta = data['content']
+                                                    content_buffer += content_delta
+                                                    yield content_delta
+                                            except json.JSONDecodeError as e:
+                                                logger.error(f"Invalid JSON in streaming response: {e}")
+                                                continue
+                                    except UnicodeDecodeError as e:
+                                        logger.warning(f"Unicode decode error in streaming response: {e}")
+                                        continue
+                            
+                            # Check if we received any content
+                            if not content_buffer:
+                                logger.warning("Empty accumulated response from Anthropic API streaming")
+                                yield "I apologize, but the response stream ended unexpectedly. Please try again."
+                        except Exception as e:
+                            logger.error(f"Error in Anthropic streaming: {str(e)}")
+                            yield f"I apologize, but there was an error processing the response. Please try again."
+                        
+                        # Signal completion
+                        yield "[DONE]"
                     
                     return content_generator()
                 

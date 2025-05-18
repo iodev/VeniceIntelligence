@@ -182,8 +182,20 @@ class PerplexityClient:
             if stream:
                 # Return generator that yields chunks
                 def generate_stream_chunks():
+                    # Initialize variables for monitoring streaming
+                    start_time = time.time()
+                    timeout_seconds = 120  # 2-minute timeout for streaming
+                    accumulated_text = ""
+                    
                     with response:
                         for line in response.iter_lines():
+                            # Check for timeout
+                            if time.time() - start_time > timeout_seconds:
+                                logger.warning(f"Streaming response timeout after {timeout_seconds} seconds")
+                                yield "I apologize, but the response stream timed out. Please try again."
+                                yield "[DONE]"
+                                break
+                                
                             if not line:
                                 continue
                             
@@ -196,16 +208,33 @@ class PerplexityClient:
                                 continue
                                 
                             try:
-                                chunk_data = json.loads(line)
+                                # Safely decode and parse JSON
+                                line_str = line.decode('utf-8') if isinstance(line, bytes) else line
+                                chunk_data = json.loads(line_str)
+                                
+                                # Extract delta content carefully
                                 delta = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                                 if delta:
+                                    accumulated_text += delta
                                     yield delta
+                            except UnicodeDecodeError as e:
+                                logger.warning(f"Unicode decode error in streaming response: {e}")
+                                continue
                             except json.JSONDecodeError:
                                 logger.warning(f"Could not parse streaming response line: {line}")
                                 continue
                             except Exception as e:
                                 logger.warning(f"Error processing streaming response: {e}")
                                 continue
+                    
+                    # Check if we received any content
+                    if not accumulated_text:
+                        logger.warning("Empty accumulated response from Perplexity API streaming")
+                        # Try to yield a fallback message to prevent UI from getting stuck
+                        yield "I apologize, but the response stream ended unexpectedly. Please try again."
+                    
+                    # Send completion signal
+                    yield "[DONE]"
                 
                 return {"stream": generate_stream_chunks()}
             else:
