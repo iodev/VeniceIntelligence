@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Pricing - AI Agent System{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold">Simple, Transparent Pricing</h1>
+        <p class="lead text-muted">Choose the plan that fits your AI workload</p>
+    </div>
+
+    <div class="row justify-content-center">
+        <!-- Free Tier -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body text-center p-4">
+                    <h3 class="card-title">Free</h3>
+                    <div class="display-6 fw-bold text-primary mb-3">$0</div>
+                    <p class="text-muted">Perfect for getting started</p>
+                    
+                    <ul class="list-unstyled text-start mb-4">
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>100 API calls/hour</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Basic model routing</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Community support</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Usage analytics</li>
+                    </ul>
+                    
+                    <button class="btn btn-outline-primary w-100" disabled>Current Plan</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Starter Tier -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card h-100 border-0 shadow">
+                <div class="card-body text-center p-4">
+                    <h3 class="card-title">Starter</h3>
+                    <div class="display-6 fw-bold text-primary mb-3">$29<small class="fs-6 text-muted">/month</small></div>
+                    <p class="text-muted">For growing projects</p>
+                    
+                    <ul class="list-unstyled text-start mb-4">
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>1,000 API calls/hour</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Multi-provider routing</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Advanced analytics</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Email support</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Cost optimization</li>
+                    </ul>
+                    
+                    <button class="btn btn-primary w-100">Upgrade to Starter</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Professional Tier -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card h-100 border-primary shadow">
+                <div class="ribbon ribbon-primary">Most Popular</div>
+                <div class="card-body text-center p-4">
+                    <h3 class="card-title">Professional</h3>
+                    <div class="display-6 fw-bold text-primary mb-3">$99<small class="fs-6 text-muted">/month</small></div>
+                    <p class="text-muted">For serious applications</p>
+                    
+                    <ul class="list-unstyled text-start mb-4">
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Unlimited API calls</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Advanced content classification</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Priority processing</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Premium models access</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Custom integrations</li>
+                    </ul>
+                    
+                    <button class="btn btn-primary w-100">Upgrade to Professional</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Enterprise Tier -->
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body text-center p-4">
+                    <h3 class="card-title">Enterprise</h3>
+                    <div class="display-6 fw-bold text-primary mb-3">$299<small class="fs-6 text-muted">/month</small></div>
+                    <p class="text-muted">For enterprise workloads</p>
+                    
+                    <ul class="list-unstyled text-start mb-4">
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Everything in Professional</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Custom model training</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>Dedicated support</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>SLA guarantees</li>
+                        <li class="mb-2"><i class="bi bi-check-circle text-success me-2"></i>On-premise deployment</li>
+                    </ul>
+                    
+                    <button class="btn btn-outline-primary w-100">Contact Sales</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Value Proposition -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <div class="text-center p-4 bg-light rounded">
+                <h3 class="mb-3">Why Choose Our AI Agent System?</h3>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <i class="bi bi-lightning-charge display-5 text-primary"></i>
+                        <h5 class="mt-2">30-70% Cost Savings</h5>
+                        <p class="text-muted">Intelligent routing reduces AI costs significantly</p>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <i class="bi bi-speedometer2 display-5 text-primary"></i>
+                        <h5 class="mt-2">Faster Responses</h5>
+                        <p class="text-muted">Multi-provider optimization for speed</p>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <i class="bi bi-shield-check display-5 text-primary"></i>
+                        <h5 class="mt-2">99.9% Uptime</h5>
+                        <p class="text-muted">Automatic failover across providers</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FAQ Section -->
+    <div class="row mt-5">
+        <div class="col-12">
+            <h3 class="text-center mb-4">Frequently Asked Questions</h3>
+            <div class="accordion" id="pricingFAQ">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                            How does the cost savings work?
+                        </button>
+                    </h2>
+                    <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#pricingFAQ">
+                        <div class="accordion-body">
+                            Our system intelligently routes your queries to the most cost-effective AI provider while maintaining quality. By analyzing query types and optimizing provider selection, we typically achieve 30-70% cost savings compared to using a single provider.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                            Can I change plans anytime?
+                        </button>
+                    </h2>
+                    <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#pricingFAQ">
+                        <div class="accordion-body">
+                            Yes! You can upgrade or downgrade your plan at any time. Changes take effect immediately, and billing is prorated.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                            Do you offer custom enterprise solutions?
+                        </button>
+                    </h2>
+                    <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#pricingFAQ">
+                        <div class="accordion-body">
+                            Absolutely! Our Enterprise plan includes custom model training, on-premise deployment options, and dedicated support. Contact our sales team for a tailored solution.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.ribbon {
+    position: absolute;
+    top: 15px;
+    right: -10px;
+    background: var(--bs-primary);
+    color: white;
+    padding: 5px 15px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    transform: rotate(10deg);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.ribbon-primary {
+    background: var(--bs-primary);
+}
+
+.card {
+    position: relative;
+    overflow: hidden;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    transition: transform 0.3s ease;
+}
+
+.bi {
+    line-height: 1;
+}
+</style>
+{% endblock %}

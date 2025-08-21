@@ -13,6 +13,8 @@ from agent.anthropic_client import AnthropicClient
 from agent.huggingface_client import HuggingFaceClient
 from agent.cost_control import CostMonitor
 from agent.api import AgentAPI
+from agent.billing import billing_manager, SubscriptionTier, FeatureFlag
+from agent.analytics import analytics_manager
 from models import ModelPerformance, UsageCost, ModelEfficiency, CostControlStrategy
 import config
 
@@ -96,11 +98,48 @@ def index():
         flash("Agent initialization failed. Please check your API keys and Qdrant configuration.", "danger")
     return render_template('index.html')
 
+@app.route('/pricing')
+def pricing():
+    """Pricing page showing subscription tiers"""
+    return render_template('pricing.html')
+
+@app.route('/dashboard')
+def dashboard():
+    """User dashboard with usage analytics and insights"""
+    user_id = session.get('user_id', 'anonymous')
+    
+    # Get user analytics and billing data
+    user_data = billing_manager.generate_usage_report(user_id)
+    dashboard_data = analytics_manager.get_dashboard_data(user_id)
+    
+    # Get recent queries for activity feed
+    recent_queries = []  # TODO: Implement recent query retrieval
+    
+    return render_template('dashboard.html', 
+                         user_data=user_data,
+                         dashboard_data=dashboard_data,
+                         recent_queries=recent_queries)
+
+
+
 @app.route('/chat', methods=['POST', 'GET'])
 def chat():
     """Handle chat interactions with the agent"""
     if agent_api is None:
         return jsonify({"error": "Agent API is not initialized"}), 500
+    
+    # Get user ID for billing and analytics
+    user_id = session.get('user_id', 'anonymous')
+    
+    # Check rate limits first
+    allowed, remaining = billing_manager.check_rate_limit(user_id)
+    if not allowed:
+        user_tier = billing_manager.get_user_tier(user_id)
+        return jsonify({
+            "error": f"Rate limit exceeded for {user_tier.value} plan. Upgrade for higher limits.",
+            "upgrade_url": "/pricing",
+            "current_plan": user_tier.value
+        }), 429
     
     # Support both POST (JSON) and GET (for EventSource)
     stream = False
@@ -145,14 +184,54 @@ def chat():
             )
             
             if result.get('status') == 'success':
+                # Track analytics and usage
+                model_used = result.get('model_used', 'unknown')
+                provider_used = result.get('provider_used', 'unknown')
+                latency_ms = result.get('latency_ms', 0)
+                tokens_used = result.get('tokens_used', 1)
+                cost_estimated = result.get('cost_estimated', 0.0)
+                cost_saved = result.get('cost_saved', 0.0)
+                
+                # Track usage for billing
+                billing_manager.track_usage(user_id, tokens_used, cost_saved, model_used, provider_used)
+                
+                # Track analytics
+                analytics_manager.track_query(
+                    user_id=user_id,
+                    query_type=query_type,
+                    model_used=model_used,
+                    provider_used=provider_used,
+                    latency_ms=latency_ms,
+                    tokens_used=tokens_used,
+                    cost_estimated=cost_estimated,
+                    cost_saved=cost_saved,
+                    success=True
+                )
+                
+                # Get upgrade recommendation if applicable
+                upgrade_rec = billing_manager.get_upgrade_recommendation(user_id)
+                
                 # Return the response with metadata
-                return jsonify({
+                response_data = {
                     "response": result.get('response'),
-                    "model_used": result.get('model_used'),
+                    "model_used": model_used,
+                    "provider_used": provider_used,
                     "query_type": query_type,
                     "conversation_id": session_id,
-                    "success": True
-                })
+                    "success": True,
+                    "remaining_requests": remaining,
+                    "cost_saved": f"${cost_saved:.4f}" if cost_saved > 0 else None
+                }
+                
+                # Add upgrade prompt if recommended
+                if upgrade_rec:
+                    response_data["upgrade_recommendation"] = {
+                        "message": upgrade_rec["reason"],
+                        "tier": upgrade_rec["tier"].value,
+                        "url": "/pricing"
+                    }
+                
+                return jsonify(response_data)
             else:
                 # Return error from API
                 return jsonify({"error": result.get('error')}), 500

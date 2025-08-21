@@ -1,0 +1,265 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AI Agent System{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <!-- Header -->
+        <div class="col-12 mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="h3 mb-0">Dashboard</h1>
+                <div class="d-flex gap-2">
+                    <span class="badge bg-primary">{{ user_data.subscription_tier.title() }} Plan</span>
+                    {% if user_data.upgrade_recommendation %}
+                    <a href="/pricing" class="btn btn-warning btn-sm">
+                        <i class="bi bi-arrow-up-circle me-1"></i>Upgrade Available
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-chat-dots display-6 text-primary"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="text-muted small">API Calls This Month</div>
+                            <div class="h4 mb-0">{{ user_data.usage.api_calls_month | default(0) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-piggy-bank display-6 text-success"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="text-muted small">Cost Saved This Month</div>
+                            <div class="h4 mb-0">${{ "%.2f"|format(user_data.usage.cost_saved_month | default(0)) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-speedometer2 display-6 text-info"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="text-muted small">Rate Limit</div>
+                            <div class="h4 mb-0">{{ user_data.limits.remaining_requests_hour }}</div>
+                            <div class="small text-muted">remaining this hour</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <i class="bi bi-cpu display-6 text-warning"></i>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="text-muted small">Models Used</div>
+                            <div class="h4 mb-0">{{ user_data.usage.models_used | default(0) }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Usage Analytics -->
+        <div class="col-lg-8 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0">
+                    <h5 class="card-title mb-0">Usage Analytics</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Query Type Distribution -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="text-muted mb-3">Query Types</h6>
+                            <div class="row">
+                                {% set query_types = [
+                                    ('text', 'Text Queries', 'primary'),
+                                    ('code', 'Code Generation', 'success'),
+                                    ('image', 'Image Creation', 'warning'),
+                                    ('math', 'Math Problems', 'info')
+                                ] %}
+                                
+                                {% for type_key, type_name, color in query_types %}
+                                <div class="col-sm-6 col-lg-3 mb-3">
+                                    <div class="text-center">
+                                        <div class="h5 text-{{ color }}">{{ dashboard_data.usage_breakdown.get(type_key, 0) }}</div>
+                                        <div class="small text-muted">{{ type_name }}</div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Performance Metrics -->
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="text-center p-3 bg-light rounded">
+                                <div class="h6 mb-1">Average Response Time</div>
+                                <div class="h4 text-primary">{{ dashboard_data.performance.average_latency }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="text-center p-3 bg-light rounded">
+                                <div class="h6 mb-1">Success Rate</div>
+                                <div class="h4 text-success">{{ dashboard_data.summary.success_rate }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="text-center p-3 bg-light rounded">
+                                <div class="h6 mb-1">Quality Score</div>
+                                <div class="h4 text-info">{{ dashboard_data.performance.quality_score }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights and Recommendations -->
+        <div class="col-lg-4 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0">
+                    <h5 class="card-title mb-0">Insights & Recommendations</h5>
+                </div>
+                <div class="card-body">
+                    {% if dashboard_data.insights %}
+                        {% for insight in dashboard_data.insights %}
+                        <div class="alert alert-info d-flex align-items-start" role="alert">
+                            <i class="bi bi-lightbulb me-2 mt-1"></i>
+                            <div>{{ insight }}</div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-graph-up display-4 mb-3"></i>
+                        <p>Use the system more to get personalized insights!</p>
+                    </div>
+                    {% endif %}
+
+                    {% if user_data.upgrade_recommendation %}
+                    <div class="alert alert-warning" role="alert">
+                        <h6 class="alert-heading">Upgrade Recommended</h6>
+                        <p class="mb-2">{{ user_data.upgrade_recommendation.reason }}</p>
+                        <p class="mb-3"><strong>{{ user_data.upgrade_recommendation.value_prop }}</strong></p>
+                        <a href="/pricing" class="btn btn-warning btn-sm">View Pricing</a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">Recent Activity</h5>
+                    <small class="text-muted">Last 24 hours</small>
+                </div>
+                <div class="card-body">
+                    {% if recent_queries %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Query Type</th>
+                                    <th>Model</th>
+                                    <th>Provider</th>
+                                    <th>Response Time</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for query in recent_queries %}
+                                <tr>
+                                    <td>{{ query.timestamp.strftime('%H:%M') }}</td>
+                                    <td>
+                                        <span class="badge bg-secondary">{{ query.query_type }}</span>
+                                    </td>
+                                    <td>{{ query.model_used }}</td>
+                                    <td>{{ query.provider_used }}</td>
+                                    <td>{{ "%.0f"|format(query.latency_ms) }}ms</td>
+                                    <td>
+                                        {% if query.success %}
+                                        <span class="badge bg-success">Success</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Failed</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-clock-history display-4 mb-3"></i>
+                        <p>No recent activity. <a href="/">Try making a query!</a></p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh dashboard every 30 seconds
+setInterval(function() {
+    // Only refresh if user is actively viewing (not in another tab)
+    if (!document.hidden) {
+        location.reload();
+    }
+}, 30000);
+
+// Highlight upgrade opportunities
+document.addEventListener('DOMContentLoaded', function() {
+    const upgradeButtons = document.querySelectorAll('[href="/pricing"]');
+    upgradeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Track upgrade button clicks for analytics
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'upgrade_click', {
+                    'source': 'dashboard'
+                });
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
