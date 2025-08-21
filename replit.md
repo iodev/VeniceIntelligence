@@ -13,6 +13,8 @@ A dynamic self-learning Python AI agent that intelligently adapts model selectio
 - **Model registry system** with dynamic discovery capabilities
 
 ## Recent Changes
+- **2025-08-21**: Prepared repository for open source community release
+- **2025-08-21**: Cleaned up commercial features for community edition focus
 - **2025-05-18**: Implemented OpenAI client integration with support for text, code, and image generation
 - **2025-05-18**: Created content classifier that intelligently routes queries to specialized models
 - **2025-05-18**: Enhanced model selection system to consider query content type (text, code, image, math)
@@ -41,11 +43,11 @@ The system is designed with complete separation between UI and agent core:
 - Can be replaced with any other interface without affecting agent logic
 
 ## User Preferences
-- Focus on intelligent provider selection based on availability and query needs
+- Focus on clean, educational code that demonstrates AI agent patterns
 - Prioritize Venice API as primary provider with intelligent fallbacks
-- System must be repeatable and separable for integration with larger agent networks
-- Avoid services hitting limits/errors through smart load balancing
-- Learn when to increase accuracy by using multiple providers in parallel
+- System must be modular and well-documented for community contributions
+- Demonstrate best practices in AI orchestration and multi-provider routing
+- Showcase advanced patterns like content classification and adaptive learning
 
 ## Technical Design Decisions
 - **Query types** (text, code, image, math) used for model selection
