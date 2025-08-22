@@ -1,6 +1,7 @@
 from main import db
-from datetime import datetime
-from sqlalchemy import Integer, String, Float, DateTime, Boolean
+from datetime import datetime, timedelta
+from sqlalchemy import Integer, String, Float, DateTime, Boolean, Text
+import json
 
 
 class ModelPerformance(db.Model):
@@ -332,3 +333,92 @@ class CostControlStrategy(db.Model):
         
         self.fallback_model = fallback_model
         self.active = active
+
+    def to_json(self):
+        """Convert the strategy to JSON format"""
+        return {
+            'id': self.id,
+            'active': self.active,
+            'name': self.name,
+            'description': self.description,
+            'daily_budget': self.daily_budget,
+            'current_spending': self.current_spending,
+            'budget_reset_at': self.budget_reset_at.isoformat() if self.budget_reset_at else None,
+            'prioritize_cost': self.prioritize_cost,
+            'prioritize_speed': self.prioritize_speed,
+            'prioritize_accuracy': self.prioritize_accuracy,
+            'cost_threshold': self.cost_threshold,
+            'fallback_model': self.fallback_model,
+            'text_task_mapping': self.text_task_mapping,
+            'code_task_mapping': self.code_task_mapping,
+            'image_task_mapping': self.image_task_mapping
+        }
+
+
+class ChatSession(db.Model):
+    __tablename__ = 'chat_sessions'
+    
+    id = db.Column(String(36), primary_key=True)  # UUID
+    title = db.Column(String(200), nullable=True)  # Auto-generated or user-defined title
+    created_at = db.Column(DateTime, default=datetime.utcnow)
+    updated_at = db.Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_active = db.Column(Boolean, default=True)
+    share_token = db.Column(String(32), nullable=True, unique=True, index=True)  # For sharing
+    
+    # Relationship to messages
+    messages = db.relationship('ChatMessage', backref='session', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __init__(self, session_id, title=None):
+        self.id = session_id
+        self.title = title or f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+    
+    def generate_share_token(self):
+        """Generate a unique share token for this session"""
+        import secrets
+        self.share_token = secrets.token_urlsafe(24)
+        return self.share_token
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'message_count': self.messages.count(),
+            'is_active': self.is_active
+        }
+
+
+class ChatMessage(db.Model):
+    __tablename__ = 'chat_messages'
+    
+    id = db.Column(Integer, primary_key=True)
+    session_id = db.Column(String(36), db.ForeignKey('chat_sessions.id'), nullable=False, index=True)
+    message_type = db.Column(String(20), nullable=False)  # 'user', 'assistant', 'system'
+    content = db.Column(Text, nullable=False)
+    query_type = db.Column(String(20), nullable=True)  # 'text', 'code', 'image'
+    model_used = db.Column(String(100), nullable=True)  # Which model generated this response
+    provider_used = db.Column(String(50), nullable=True)  # Which provider was used
+    timestamp = db.Column(DateTime, default=datetime.utcnow, index=True)
+    extra_data = db.Column(Text, nullable=True)  # JSON string for additional data
+    
+    def __init__(self, session_id, message_type, content, query_type=None, model_used=None, provider_used=None, extra_data=None):
+        self.session_id = session_id
+        self.message_type = message_type
+        self.content = content
+        self.query_type = query_type
+        self.model_used = model_used
+        self.provider_used = provider_used
+        self.extra_data = extra_data
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'message_type': self.message_type,
+            'content': self.content,
+            'query_type': self.query_type,
+            'model_used': self.model_used,
+            'provider_used': self.provider_used,
+            'timestamp': self.timestamp.isoformat(),
+            'metadata': json.loads(self.extra_data) if self.extra_data else None
+        }

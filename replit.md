@@ -13,6 +13,8 @@ A dynamic self-learning Python AI agent powered by Venice.ai as the primary prov
 - **Model registry system** with Venice.ai models prominently featured
 
 ## Recent Changes
+- **2025-08-22**: Added comprehensive conversation history storage and retrieval system
+- **2025-08-22**: Implemented chat session management with export/sharing functionality
 - **2025-08-22**: Established Venice.ai as primary provider with prominent model selection UI
 - **2025-08-22**: Fixed template errors and SQLAlchemy session binding issues
 - **2025-08-21**: Prepared clean community edition for open source release
@@ -66,6 +68,7 @@ The system is designed with complete separation between UI and agent core:
 ✅ **Cost monitoring** and performance tracking
 ✅ **Persistent memory** with Qdrant integration
 ✅ **Parallel execution** for high-accuracy mode
+✅ **Conversation history** storage, retrieval, and export/sharing
 ✅ **Community edition** ready for open source release
 
 ## Future Considerations

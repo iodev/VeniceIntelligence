@@ -14,7 +14,7 @@ from agent.huggingface_client import HuggingFaceClient
 from agent.cost_control import CostMonitor
 from agent.api import AgentAPI
 # Removed commercial features for open source release
-from models import ModelPerformance, UsageCost, ModelEfficiency, CostControlStrategy
+from models import ModelPerformance, UsageCost, ModelEfficiency, CostControlStrategy, ChatSession, ChatMessage
 import config
 
 # Set up logging
@@ -774,3 +774,170 @@ def admin():
                            huggingface_models=huggingface_models,
                            model_performance=model_performance,
                            strategy=strategy)
+
+
+# ==================== CONVERSATION MANAGEMENT ROUTES ====================
+
+@app.route('/api/sessions', methods=['GET'])
+def get_sessions():
+    """Get all chat sessions"""
+    try:
+        sessions = ChatSession.query.filter_by(is_active=True).order_by(ChatSession.updated_at.desc()).all()
+        return jsonify({
+            'sessions': [session.to_dict() for session in sessions],
+            'count': len(sessions)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving sessions: {str(e)}")
+        return jsonify({'error': 'Failed to retrieve sessions'}), 500
+
+
+@app.route('/api/sessions', methods=['POST'])
+def create_session():
+    """Create a new chat session"""
+    try:
+        import uuid
+        session_id = str(uuid.uuid4())
+        title = request.json.get('title', f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}")
+        
+        session = ChatSession(session_id=session_id, title=title)
+        db.session.add(session)
+        db.session.commit()
+        
+        return jsonify(session.to_dict()), 201
+    except Exception as e:
+        logger.error(f"Error creating session: {str(e)}")
+        return jsonify({'error': 'Failed to create session'}), 500
+
+
+@app.route('/api/sessions/<session_id>', methods=['GET'])
+def get_session(session_id):
+    """Get a specific session with its messages"""
+    try:
+        session = ChatSession.query.get_or_404(session_id)
+        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+        
+        return jsonify({
+            'session': session.to_dict(),
+            'messages': [msg.to_dict() for msg in messages]
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving session {session_id}: {str(e)}")
+        return jsonify({'error': 'Failed to retrieve session'}), 500
+
+
+@app.route('/api/sessions/<session_id>/messages', methods=['POST'])
+def add_message(session_id):
+    """Add a message to a session"""
+    try:
+        data = request.json
+        message = ChatMessage(
+            session_id=session_id,
+            message_type=data.get('message_type', 'user'),
+            content=data.get('content', ''),
+            query_type=data.get('query_type'),
+            model_used=data.get('model_used'),
+            provider_used=data.get('provider_used'),
+            extra_data=json.dumps(data.get('metadata', {})) if data.get('metadata') else None
+        )
+        
+        db.session.add(message)
+        
+        # Update session updated_at timestamp
+        session = ChatSession.query.get(session_id)
+        if session:
+            session.updated_at = datetime.utcnow()
+            
+        db.session.commit()
+        
+        return jsonify(message.to_dict()), 201
+    except Exception as e:
+        logger.error(f"Error adding message to session {session_id}: {str(e)}")
+        return jsonify({'error': 'Failed to add message'}), 500
+
+
+@app.route('/api/sessions/<session_id>/share', methods=['POST'])
+def share_session(session_id):
+    """Generate a share token for a session"""
+    try:
+        session = ChatSession.query.get_or_404(session_id)
+        share_token = session.generate_share_token()
+        db.session.commit()
+        
+        return jsonify({
+            'share_token': share_token,
+            'share_url': f"{request.url_root}shared/{share_token}"
+        })
+    except Exception as e:
+        logger.error(f"Error sharing session {session_id}: {str(e)}")
+        return jsonify({'error': 'Failed to share session'}), 500
+
+
+@app.route('/api/sessions/<session_id>/export')
+def export_session(session_id):
+    """Export session as JSON or markdown"""
+    try:
+        session = ChatSession.query.get_or_404(session_id)
+        messages = ChatMessage.query.filter_by(session_id=session_id).order_by(ChatMessage.timestamp).all()
+        
+        format_type = request.args.get('format', 'json')
+        
+        if format_type == 'markdown':
+            md_content = f"# {session.title}\n\n"
+            md_content += f"**Created:** {session.created_at.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            
+            for msg in messages:
+                if msg.message_type == 'user':
+                    md_content += f"**User:** {msg.content}\n\n"
+                elif msg.message_type == 'assistant':
+                    model_info = f" (via {msg.model_used})" if msg.model_used else ""
+                    md_content += f"**Assistant{model_info}:** {msg.content}\n\n"
+            
+            return md_content, 200, {'Content-Type': 'text/markdown'}
+        
+        else:  # JSON format
+            export_data = {
+                'session': session.to_dict(),
+                'messages': [msg.to_dict() for msg in messages],
+                'export_timestamp': datetime.utcnow().isoformat()
+            }
+            return jsonify(export_data)
+            
+    except Exception as e:
+        logger.error(f"Error exporting session {session_id}: {str(e)}")
+        return jsonify({'error': 'Failed to export session'}), 500
+
+
+@app.route('/shared/<share_token>')
+def view_shared_session(share_token):
+    """View a shared session"""
+    try:
+        session = ChatSession.query.filter_by(share_token=share_token).first_or_404()
+        messages = ChatMessage.query.filter_by(session_id=session.id).order_by(ChatMessage.timestamp).all()
+        
+        return render_template('shared_chat.html', 
+                             session=session, 
+                             messages=messages)
+    except Exception as e:
+        logger.error(f"Error viewing shared session {share_token}: {str(e)}")
+        return render_template('500.html'), 404
+
+
+@app.route('/api/sessions/<session_id>', methods=['DELETE'])
+def delete_session(session_id):
+    """Delete a chat session"""
+    try:
+        session = ChatSession.query.get_or_404(session_id)
+        session.is_active = False  # Soft delete
+        db.session.commit()
+        
+        return jsonify({'message': 'Session deleted successfully'}), 200
+    except Exception as e:
+        logger.error(f"Error deleting session {session_id}: {str(e)}")
+        return jsonify({'error': 'Failed to delete session'}), 500
+
+
+@app.route('/history')
+def chat_history():
+    """Chat history page"""
+    return render_template('history.html')
