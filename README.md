@@ -12,7 +12,8 @@ This AI agent system demonstrates **intelligent routing** across multiple AI pro
 
 ### 🎯 Key Features
 
-- **🔀 Multi-Provider Routing**: Seamlessly switches between Venice.ai, Anthropic, Perplexity, and other providers
+- **🏛️ Venice.ai Primary**: Powered by Venice.ai as the primary provider with Mistral 3.1 24B, Llama 3.2 3B, and Llama 3.3 70B models
+- **🔀 Smart Routing**: Intelligent fallback to Anthropic, Perplexity, and other providers for specialized tasks
 - **🧠 Content Classification**: Automatically detects query types (text, code, image, math) for optimal model selection  
 - **📊 Performance Tracking**: Built-in analytics to monitor model performance and costs
 - **🔄 Adaptive Learning**: Vector storage with Qdrant for persistent memory and learning
@@ -25,7 +26,8 @@ This AI agent system demonstrates **intelligent routing** across multiple AI pro
 
 - Python 3.11+
 - PostgreSQL database
-- API keys for at least one provider (Venice.ai, Anthropic, or Perplexity)
+- Venice.ai API key (primary provider, required)
+- Optional: Anthropic, Perplexity API keys for enhanced routing
 
 ### Installation
 

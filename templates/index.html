@@ -34,7 +34,7 @@
                     <div class="card-body">
                         <div id="chatHistory" class="chat-history mb-3">
                             <div class="system-message">
-                                <p>Hello! I'm a self-learning agent powered by Venice.ai. How can I help you today?</p>
+                                <p><strong>🏛️ Venice.ai AI Agent</strong> - Multi-provider routing with intelligent cost optimization. Venice.ai models are prioritized, with smart fallback to Anthropic and Perplexity when optimal. How can I help you today?</p>
                             </div>
                         </div>
                         
@@ -56,6 +56,26 @@
                                 </label>
                             </div>
                             <small class="text-muted ms-2">Select the type of your query</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="modelSelect" class="form-label">
+                                <i class="bi bi-cpu"></i> AI Model
+                            </label>
+                            <select id="modelSelect" class="form-select">
+                                <option value="auto" selected>🤖 Smart Routing (Venice.ai Primary)</option>
+                                <optgroup label="🏛️ Venice.ai Models (Primary Provider)">
+                                    <option value="mistral-31-24b">Mistral 3.1 24B - Fast & Accurate</option>
+                                    <option value="llama-3.2-3b">Llama 3.2 3B - Lightweight</option>
+                                    <option value="llama-3.3-70b">Llama 3.3 70B - Most Powerful</option>
+                                </optgroup>
+                                <optgroup label="🔄 Fallback Providers">
+                                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet (Anthropic)</option>
+                                    <option value="llama-3.1-sonar-small-128k-online">Llama Sonar Small (Perplexity)</option>
+                                    <option value="llama-3.1-sonar-large-128k-online">Llama Sonar Large (Perplexity)</option>
+                                </optgroup>
+                            </select>
+                            <small class="text-muted">Venice.ai provides primary AI models with intelligent routing to other providers when needed</small>
                         </div>
                         
                         <div class="input-group">

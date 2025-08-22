@@ -1,18 +1,20 @@
 # AI Agent System - Project Documentation
 
 ## Overview
-A dynamic self-learning Python AI agent that intelligently adapts model selection using advanced API integrations and vector storage technologies. The system functions as a modular, self-contained component that can be queried by and integrated with other agent systems in a larger network.
+A dynamic self-learning Python AI agent powered by Venice.ai as the primary provider, with intelligent routing to additional providers for optimal performance and cost efficiency. The system functions as a modular, self-contained component that demonstrates advanced AI orchestration patterns.
 
 ## Key Components
-- **Venice.ai API integration** for model evaluation and selection
-- **Multi-provider support** (Venice, Anthropic, Perplexity, OpenAI)
+- **Venice.ai Primary Integration** - Mistral 3.1 24B, Llama 3.2 3B, Llama 3.3 70B as primary models
+- **Smart Multi-Provider Routing** - Intelligent fallback to Anthropic, Perplexity, OpenAI for specialized tasks
 - **Qdrant vector storage** for persistent learning mechanisms
-- **Intelligent cost monitoring** and performance tracking
-- **Adaptive learning framework** with multi-model support
-- **Content classifier** for optimal model selection based on query type
-- **Model registry system** with dynamic discovery capabilities
+- **Intelligent cost monitoring** and performance tracking with Venice.ai prioritization
+- **Adaptive learning framework** with Venice.ai-first model selection
+- **Content classifier** for optimal routing between Venice.ai and specialist providers
+- **Model registry system** with Venice.ai models prominently featured
 
 ## Recent Changes
+- **2025-08-22**: Established Venice.ai as primary provider with prominent model selection UI
+- **2025-08-22**: Fixed template errors and SQLAlchemy session binding issues
 - **2025-08-21**: Prepared clean community edition for open source release
 - **2025-05-18**: Implemented OpenAI client integration with support for text, code, and image generation
 - **2025-05-18**: Created content classifier that intelligently routes queries to specialized models
