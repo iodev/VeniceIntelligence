@@ -91,10 +91,23 @@ class CostMonitor:
     
     def _load_model_efficiencies(self):
         """Load model efficiency data for all models"""
-        efficiencies = ModelEfficiency.query.all()
-        for eff in efficiencies:
-            key = f"{eff.provider}:{eff.model_id}:{eff.task_type}"
-            self._model_efficiencies[key] = eff
+        try:
+            efficiencies = ModelEfficiency.query.all()
+            for eff in efficiencies:
+                key = f"{eff.provider}:{eff.model_id}:{eff.task_type}"
+                # Create a data dict to avoid session binding issues
+                self._model_efficiencies[key] = {
+                    'provider': eff.provider,
+                    'model_id': eff.model_id,
+                    'task_type': eff.task_type,
+                    'avg_time_to_first_token': eff.avg_time_to_first_token,
+                    'avg_tokens_per_second': eff.avg_tokens_per_second,
+                    'avg_cost_per_100_tokens': eff.avg_cost_per_100_tokens,
+                    'samples_count': eff.samples_count
+                }
+        except Exception as e:
+            logger.error(f"Error loading model efficiencies: {str(e)}")
+            self._model_efficiencies = {}
     
     def _load_daily_usage(self):
         """Load today's usage data for cost tracking"""
@@ -241,8 +254,16 @@ class CostMonitor:
         efficiency.samples_count += 1
         db.session.commit()
         
-        # Update cache
-        self._model_efficiencies[key] = efficiency
+        # Update cache with dict to avoid session binding issues
+        self._model_efficiencies[key] = {
+            'provider': efficiency.provider,
+            'model_id': efficiency.model_id,
+            'task_type': efficiency.task_type,
+            'avg_time_to_first_token': efficiency.avg_time_to_first_token,
+            'avg_tokens_per_second': efficiency.avg_tokens_per_second,
+            'avg_cost_per_100_tokens': efficiency.avg_cost_per_100_tokens,
+            'samples_count': efficiency.samples_count
+        }
     
     def select_model_for_task(self, task_type: str, content_type: str = "text") -> Tuple[str, str]:
         """
@@ -350,13 +371,13 @@ class CostMonitor:
             
             # Cost score (1.0 is lowest cost)
             max_cost = 0.01  # $0.01 per 100 tokens reference
-            cost_score = 1.0 - min(1.0, efficiency.avg_cost_per_100_tokens / max_cost)
+            cost_score = 1.0 - min(1.0, efficiency.get('avg_cost_per_100_tokens', 0.01) / max_cost)
             
             # Speed score (1.0 is fastest)
-            speed_score = min(1.0, efficiency.avg_tokens_per_second / 50.0)  # 50 tokens/sec reference
+            speed_score = min(1.0, efficiency.get('avg_tokens_per_second', 10.0) / 50.0)  # 50 tokens/sec reference
             
-            # Use accuracy score directly
-            accuracy_score = efficiency.accuracy_score
+            # Use accuracy score directly (default to 0.5 if not available)
+            accuracy_score = efficiency.get('accuracy_score', 0.5)
             
             # Combined weighted score
             score = (cost_score * cost_weight + 

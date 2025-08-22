@@ -31,6 +31,32 @@ def format_timestamp(timestamp):
     except (ValueError, TypeError):
         return 'Invalid timestamp'
 
+@app.template_filter('format_model_name')
+def format_model_name(model_id):
+    """Format model names for display"""
+    if not model_id:
+        return 'Unknown Model'
+    
+    # Clean up model names for better display
+    model_name = str(model_id)
+    
+    # Replace common patterns for readability
+    replacements = {
+        'claude-3-5-sonnet-20241022': 'Claude 3.5 Sonnet',
+        'claude-3-opus-20240229': 'Claude 3 Opus',
+        'claude-3-sonnet-20240229': 'Claude 3 Sonnet',
+        'claude-3-haiku-20240307': 'Claude 3 Haiku',
+        'llama-3.1-sonar-small-128k-online': 'Llama 3.1 Sonar Small',
+        'llama-3.1-sonar-large-128k-online': 'Llama 3.1 Sonar Large',
+        'llama-3.1-sonar-huge-128k-online': 'Llama 3.1 Sonar Huge',
+        'mistral-31-24b': 'Mistral 3.1 24B',
+        'gpt-4o': 'GPT-4o',
+        'gpt-4': 'GPT-4',
+        'gpt-3.5-turbo': 'GPT-3.5 Turbo'
+    }
+    
+    return replacements.get(model_name, model_name.replace('-', ' ').title())
+
 # Create references for the agent components
 venice_client = None
 venice_image_client = None
