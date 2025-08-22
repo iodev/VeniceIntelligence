@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import datetime
+from datetime import datetime as dt
 from flask import render_template, request, jsonify, session, redirect, url_for, flash, Response, stream_with_context, current_app
 from main import app, db  # Import Flask app from main.py
 from agent.core import Agent
@@ -15,6 +16,7 @@ from agent.cost_control import CostMonitor
 from agent.api import AgentAPI
 # Removed commercial features for open source release
 from models import ModelPerformance, UsageCost, ModelEfficiency, CostControlStrategy, ChatSession, ChatMessage
+import uuid
 import config
 
 # Set up logging
@@ -464,6 +466,10 @@ def manage_models():
 def page_not_found(e):
     return render_template('404.html'), 404
 
+@app.errorhandler(403)
+def access_forbidden(e):
+    return render_template('403.html'), 403
+
 @app.errorhandler(500)
 def server_error(e):
     return render_template('500.html'), 500
@@ -798,7 +804,7 @@ def create_session():
     try:
         import uuid
         session_id = str(uuid.uuid4())
-        title = request.json.get('title', f"Chat {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}")
+        title = request.json.get('title', f"Chat {dt.utcnow().strftime('%Y-%m-%d %H:%M')}")
         
         session = ChatSession(session_id=session_id, title=title)
         db.session.add(session)
@@ -830,7 +836,7 @@ def get_session(session_id):
 def add_message(session_id):
     """Add a message to a session"""
     try:
-        data = request.json
+        data = request.json or {}
         message = ChatMessage(
             session_id=session_id,
             message_type=data.get('message_type', 'user'),
@@ -846,7 +852,7 @@ def add_message(session_id):
         # Update session updated_at timestamp
         session = ChatSession.query.get(session_id)
         if session:
-            session.updated_at = datetime.utcnow()
+            session.updated_at = dt.utcnow()
             
         db.session.commit()
         
@@ -899,7 +905,7 @@ def export_session(session_id):
             export_data = {
                 'session': session.to_dict(),
                 'messages': [msg.to_dict() for msg in messages],
-                'export_timestamp': datetime.utcnow().isoformat()
+                'export_timestamp': dt.utcnow().isoformat()
             }
             return jsonify(export_data)
             
