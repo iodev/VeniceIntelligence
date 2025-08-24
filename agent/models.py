@@ -373,7 +373,7 @@ class VeniceClient:
         self, 
         text: str, 
         model: str = "text-embedding-3-large"
-    ) -> List[float]:
+    ) -> Optional[List[float]]:
         """
         Get embedding vector for text via OpenAI embedding API
         
@@ -388,9 +388,9 @@ class VeniceClient:
             raise ValueError("Text cannot be empty")
         
         if not self.openai_client:
-            logger.error("OpenAI client not initialized, cannot generate embeddings")
-            # Return zeros as fallback (not ideal, but prevents crashing)
-            return [0.0] * 3072  # text-embedding-3-large size
+            logger.warning("OpenAI client not initialized, embeddings will be disabled")
+            # Return None to indicate embeddings are not available
+            return None
         
         try:
             # the newest OpenAI model is "text-embedding-3-large" which was released in 2024

@@ -161,11 +161,13 @@ def chat():
         query = data.get('query', '')
         system_prompt = data.get('system_prompt', 'You are a helpful AI assistant.')
         query_type = data.get('query_type', 'text')  # Default to text if not specified
+        model_id = data.get('model_id', 'auto')  # Default to auto selection
         stream = data.get('stream', False)
     else:  # GET method for EventSource
         query = request.args.get('query', '')
         system_prompt = request.args.get('system_prompt', 'You are a helpful AI assistant.')
         query_type = request.args.get('query_type', 'text')  # Default to text if not specified
+        model_id = request.args.get('model_id', 'auto')  # Default to auto selection
         stream = request.args.get('stream') == 'true'
     
     if not query:
@@ -180,17 +182,19 @@ def chat():
     
     try:
         if stream:
-            return stream_chat(query, system_prompt, query_type, session_id)
+            return stream_chat(query, system_prompt, query_type, session_id, model_id)
         else:
             # Get response from the agent API
             # The agent API layer handles all business logic
+            # Use selected model if not 'auto'
+            selected_model = None if model_id == 'auto' else model_id
             result = agent_api.process_query(
                 query=query, 
                 system_prompt=system_prompt, 
                 query_type=query_type,
                 agent_id=None,
                 provider=None,
-                model_id=None,
+                model_id=selected_model,
                 stream=False,
                 session_id=session_id  # Pass session ID for conversation continuity
             )
@@ -213,7 +217,7 @@ def chat():
         logger.error(f"Error processing query: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-def stream_chat(query, system_prompt, query_type="text", session_id=None):
+def stream_chat(query, system_prompt, query_type="text", session_id=None, model_id="auto"):
     """Stream chat responses to the client"""
     def generate():
         try:
@@ -224,10 +228,15 @@ def stream_chat(query, system_prompt, query_type="text", session_id=None):
                 
             # Request streaming response from the API layer
             # This abstracts away the details of memory, model selection, etc.
+            # Use selected model if not 'auto'
+            selected_model = None if model_id == 'auto' else model_id
             result = agent_api.process_query(
                 query=query,
                 system_prompt=system_prompt,
                 query_type=query_type,
+                agent_id=None,
+                provider=None,
+                model_id=selected_model,
                 stream=True,
                 session_id=session_id  # Pass session ID for conversation continuity
             )

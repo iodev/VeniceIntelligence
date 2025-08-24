@@ -244,6 +244,40 @@ class MemoryManager:
         self.local_storage = []
         self.local_id_counter = 0
     
+    def _get_text_hash_embedding(self, text: str) -> List[float]:
+        """
+        Generate a simple hash-based pseudo-embedding when real embeddings aren't available
+        This is a fallback method that provides basic similarity matching
+        """
+        import hashlib
+        
+        # Normalize text
+        normalized = text.lower().strip()
+        
+        # Create multiple hash components for different aspects
+        hashes = []
+        
+        # Overall hash
+        overall_hash = hashlib.md5(normalized.encode()).hexdigest()
+        hashes.extend([float(int(overall_hash[i:i+2], 16)) / 255.0 for i in range(0, 32, 2)])
+        
+        # Word-based hashes  
+        words = normalized.split()[:10]  # Use first 10 words
+        for i, word in enumerate(words):
+            word_hash = hashlib.md5(word.encode()).hexdigest()
+            hashes.extend([float(int(word_hash[j:j+2], 16)) / 255.0 for j in range(0, 4, 2)])
+        
+        # Pad or truncate to match expected size
+        target_size = min(self.vector_size, 64)  # Use smaller size for hash-based
+        if len(hashes) < target_size:
+            # Pad with zeros
+            hashes.extend([0.0] * (target_size - len(hashes)))
+        else:
+            # Truncate
+            hashes = hashes[:target_size]
+        
+        return hashes
+    
     def _get_embedding(self, text: str) -> List[float]:
         """
         Get embedding for a text using OpenAI embedding model
@@ -256,11 +290,16 @@ class MemoryManager:
         """
         try:
             embedding = self.venice_client.get_embedding(text, model=self.embedding_model)
+            if embedding is None:
+                logger.debug("Embeddings not available, using simple text hash")
+                # Use a simple hash-based approach when embeddings aren't available
+                return self._get_text_hash_embedding(text)
             return embedding
         except Exception as e:
             logger.error(f"Error getting embedding: {str(e)}")
-            # Return a zero vector as a fallback
-            return [0.0] * self.vector_size
+            # Use simple hash when embeddings fail
+            logger.debug("Falling back to text hash embedding")
+            return self._get_text_hash_embedding(text)
     
     def store_interaction(
         self, 
